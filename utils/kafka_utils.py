@@ -11,7 +11,7 @@ from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, p
+from utils.config import max_size, WEB_PORT, p
 from utils.scocket_model import WebSocketUtil
 from utils.functions import get_height_funs
 
@@ -45,7 +45,7 @@ class MyProcess:
 
     def __init__(self, config):
         # self.take_queue = Queue(maxsize=20)
-        self.send_queue = Queue(maxsize=1000)
+        self.send_queue = Queue(maxsize=200)
         self.websocket_queue = Queue(maxsize=1000)
         self.origin_data = multiprocessing.Manager().dict()
         self.origin_data['data'] = {}
@@ -56,37 +56,38 @@ class MyProcess:
         KAFKA_HOST, KAFKA_PORT, send_topic, take_topic = config.KAFKA_HOST, config.KAFKA_PORT, config.send_topic, config.take_topic
         p1 = Process(target=self.take, args=(KAFKA_HOST, KAFKA_PORT, take_topic, self.origin_data))
         p2 = Process(target=self.send, args=(self.send_queue, KAFKA_HOST, KAFKA_PORT, send_topic))
-        # p3 = Process(target=self.websocket_process, args=(self.websocket_queue,))
+        p3 = Process(target=self.websocket_process, args=(self.websocket_queue,))
         p1.start()
         p2.start()
-        # p3.start()
+        p3.start()
 
-    # def websocket_process(self, websocket_queue):
-    #     height_funs = get_height_funs()
-    #     # 子进程有一个websocket，用来与前端进行通信
-    #     while True:
-    #         try:
-    #             web = WebSocketUtil(port=WEB_PORT)
-    #             web.start_socket_server()
-    #             users = web.users
-    #             while True:
-    #                 data = websocket_queue.get()
-    #                 if len(users):
-    #                     for obj in data[0]["objs"]:
-    #                         lon, lat = p(obj['x'], -obj['y'], inverse=True)
-    #                         obj.update(longitude=lon, latitude=lat, height=height_funs[obj['lane_number']](lon).tolist())
-    #
-    #                     send_users = copy.copy(users)
-    #                     for user in send_users:
-    #                         web.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
-    #         except:
-    #             error = str(traceback.format_exc())
-    #             print("websocket send error:", error)
+    def websocket_process(self, websocket_queue):
+        height_funs = get_height_funs()
+        # 子进程有一个websocket，用来与前端进行通信
+        while True:
+            try:
+                web = WebSocketUtil(port=WEB_PORT)
+                web.start_socket_server()
+                users = web.users
+                while True:
+                    data = websocket_queue.get()
+                    print("websocket users:", len(users), len(data[0]["objs"]))
+                    if len(users):
+                        for obj in data[0]["objs"]:
+                            lon, lat = p(obj['x'], -obj['y'], inverse=True)
+                            obj.update(longitude=lon, latitude=lat, height=height_funs[obj['lane_number']](lon).tolist())
+
+                        send_users = copy.copy(users)
+                        for user in send_users:
+                            web.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
+            except:
+                error = str(traceback.format_exc())
+                print("websocket send error:", error)
 
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
         # producer 和 users 列表都在子进程初始化，不会影响主进程
-        # height_funs = get_height_funs()
+        height_funs = get_height_funs()
         while True:
             try:
                 producer = Producer(*args)
@@ -99,8 +100,8 @@ class MyProcess:
 
                     for obj in data[0]["objs"]:
                         lon, lat = p(obj['x'], -obj['y'], inverse=True)
-                        # obj.update(longitude=lon * 10000000, latitude=lat * 10000000, height=height_funs[obj['lane_number']](lon).tolist())
-                        obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000))
+                        obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000), height=height_funs[obj['lane_number']](lon).tolist())
+                        # obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000))
                     producer.send(data)
             except:
                 error = str(traceback.format_exc())

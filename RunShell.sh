@@ -3,18 +3,23 @@
 export DISPLAY=:0
 export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH
 
+
 while :
 do
-  PID=$(ps -ef|grep "python3 main"|grep -v grep|awk '{print $2}')
-  echo $PID
-  if [ -z $PID ]; then
-    echo "process provider not exist"s
-  else
-    echo "process id: $PID"
-    kill -9 ${PID}
-    echo "process provider killed"
+  starttime=$(date +%Y-%m-%d\ %H:%M:%S)
+  echo $starttime
+  pid_num=$(ps -ef | grep "python3 main"| grep -v "grep"| wc -l)
+  if [ $pid_num -ne 5 ];
+  then
+    echo "restart"
+    pids=$(ps -ef | grep "python3 main" | grep -v "grep" | awk '{print $2}')
+    echo $pids
+    for pid in ${pids}
+    do
+        echo "kill pid" $pid
+        kill -9 $pid
+    done
+    python3 main.py >> text.log 2>&1 &
   fi
-  python3 main.py >> text.log 2>&1 &
-  sleep 60
+  sleep 50
 done
-

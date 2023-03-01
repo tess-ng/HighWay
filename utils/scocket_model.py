@@ -6,18 +6,16 @@ import hashlib
 import base64
 
 # 此功能用于与外界交互，可不使用
+import traceback
 from threading import Thread
 
 class WebSocketUtil(object):
-    # global users
-    # users = set()
-
     def __init__(self, port=8765, max_wait_user=5):
         self.sock = socket.socket()
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("0.0.0.0", port))
         self.sock.listen(max_wait_user)
-
+        self.sock.setblocking(False)
         self.users = set()
 
     def get_headers(self, data):
@@ -41,8 +39,12 @@ class WebSocketUtil(object):
         """
             等待用户连接
         """
-        conn, addr = self.sock.accept()
+        try:
+            conn, addr = self.sock.accept()
+        except BlockingIOError as err:
+            return
         self.users.add(conn)
+        print('websocket add new user', conn, self.users)
         # 获取握手消息，magic string ,sha1加密  发送给客户端  握手消息
         data = conn.recv(8096)
         headers = self.get_headers(data)
@@ -88,7 +90,7 @@ class WebSocketUtil(object):
             conn.send(msg)
         except Exception as e:
             # 删除断开连接的记录
-            print('error', self.users)
+            print('websocket delete user', self.users, e)
             self.users.remove(conn)
 
     def wait_socket_connect(self):
@@ -96,7 +98,11 @@ class WebSocketUtil(object):
             循环等待客户端建立连接
         """
         while True:
-            self.socket_connect()
+            try:
+                self.socket_connect()
+            except:
+                error = str(traceback.format_exc())
+                print("socket_connect error:", error)
 
     def start_socket_server(self):
         """

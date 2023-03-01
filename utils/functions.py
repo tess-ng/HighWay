@@ -9,7 +9,7 @@ import difflib
 import numpy as np
 
 import json
-from utils.config import neighbor_distance, BASEPATH, laneId_mapping
+from utils.config import neighbor_distance, BASEPATH, CENTER_POINT_PATH
 from scipy.interpolate import interp1d
 
 
@@ -186,18 +186,18 @@ def get_vehi_info(simuiface):
             origin_data = json.loads(vehi.name())
             mPoint = get_attr(vehiStatus, 'mPoint')
 
-            try:
-                laneId = laneId_mapping[vehi.lane().link().id()][vehi.lane().number()]
-            except:
-                error = str(traceback.format_exc())
-                print("lane_convert error:", error)
-                continue
+            # try:
+            #     laneId = laneId_mapping[vehi.lane().link().id()][vehi.lane().number()]
+            # except:
+            #     error = str(traceback.format_exc())
+            #     print("lane_convert error:", error)
+            #     continue
 
             origin_data.update(
                 {
                     'x': p2m(mPoint.x()),
                     'y': p2m(mPoint.y()),
-                    'laneId': laneId,
+                    # 'laneId': laneId,
                     "angleGps": int(get_attr(vehi, 'angle') * 10),
                     "sim_speed": p2m(get_attr(vehi, 'currSpeed')),
                     'lane_number': vehi.lane().number(),
@@ -209,7 +209,7 @@ def get_vehi_info(simuiface):
     return data
 
 def get_height_funs():
-    data = json.load(open(os.path.join(BASEPATH, 'files', 'bh_points.json')))
+    data = json.load(open(CENTER_POINT_PATH))
     lane_code_mapping = {
         "KX1": 0,
         "KX2": 1,

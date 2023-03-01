@@ -161,7 +161,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         projection_scale = np.dot(x, y) / np.dot(x, x)  # 投影比例
         module_x = np.sqrt(np.dot(x, x))  # x的模长
         real_speed = data['origin_speed']
-        sim_new_speed = max(real_speed + projection_scale * module_x / (smoothing_time / 1000), real_speed / 2)
+        sim_new_speed = min(max(real_speed + projection_scale * module_x / (smoothing_time / 1000), real_speed / 2), real_speed * 2)
 
         veh_basic_info[veh.id()].update(
             {
@@ -201,11 +201,16 @@ class MySimulator(QObject, PyCustomerSimulator):
         # TODO 实时获取仿真车辆信息,发送至队列
         vehs_data = get_vehi_info(simuiface)
         send_queue = my_process.send_queue
-        # websocket_queue = my_process.websocket_queue
+        websocket_queue = my_process.websocket_queue
         try:
             send_queue.put_nowait(vehs_data)
         except:
             print('send_queue is full')
+
+        try:
+            websocket_queue.put_nowait(vehs_data)
+        except:
+            print('websocket_queue is full')
 
         timestamp = time.time()
         # 每秒执行一次
@@ -282,7 +287,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         if position_car and position_car[4] == 'L':  # 只做路段发车
             dvp = Online.DynaVehiParam()
             # TODO 车型，颜色
-            dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data.get('type') or 13)), 13)
+            dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data.get('type') or 1)), 13)
             dvp.roadId = position_car[0]
 
             # 重设 lane_number
@@ -312,7 +317,7 @@ class MySimulator(QObject, PyCustomerSimulator):
             del new_cars[plat]
         return True
 
-    def isStopDriving(self, veh):  # 被标记清除的车辆，重新创建
-        if veh_basic_info[veh.id()]['delete']:
-            return True
-        return False
+    # def isStopDriving(self, veh):  # 被标记清除的车辆，重新创建
+    #     if veh_basic_info[veh.id()]['delete']:
+    #         return True
+    #     return False
