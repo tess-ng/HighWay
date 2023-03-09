@@ -10,9 +10,16 @@ from PySide2.QtWidgets import *
 # 初始化kafka对象
 from Tessng import *
 
-from utils.config import TESSNG_FILE_PATH
+from utils.config import TESSNG_FILE_PATH, LOG_FILE_DIR
 from utils.kafka_utils import MyProcess
 from MyPlugin import *
+import logging
+import time
+
+logFormatStr = '[%(asctime)s] p%(process)s {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
+# logging.basicConfig(format=logFormatStr, filename=os.path.join(LOG_FILE_DIR, "tessng.log"), level=logging.INFO)
+
+logging.basicConfig(format=logFormatStr, handlers=[logging.FileHandler(os.path.join(LOG_FILE_DIR, f"tessng_{int(time.time())}.log"), 'w', 'utf-8')], level=logging.INFO)
 
 
 if __name__ == '__main__':

@@ -1,30 +1,19 @@
 # 对所有车辆从车牌，位置间进行匹配，为每两车匹配一个仿真车辆,重新生成所有的轨迹数据
-import os
-import traceback
 
-from Tessng import *
+import traceback
+import json
 import time
+import logging
 import collections
 import difflib
 import numpy as np
 
-import json
-from utils.config import neighbor_distance, BASEPATH, laneId_mapping
-from scipy.interpolate import interp1d
+from Tessng import *
+from utils.config import neighbor_distance, laneId_mapping
 
 
 def diff_cars(veh_infos, cars):
-    adjust_cars = {}
-    # 先将数据进行初处理，避免同辆车在两位置出现
-    for car in cars:
-        car_plat = car['plat']
-        if not adjust_cars.get(car_plat):
-            adjust_cars[car_plat] = car
-        else:
-            # 调整xy等参数
-            adjust_cars[car_plat]['x'] = (adjust_cars[car_plat]['x'] + car['x']) / 2
-            adjust_cars[car_plat]['y'] = (adjust_cars[car_plat]['y'] + car['y']) / 2
-            adjust_cars[car_plat]['speed'] = (adjust_cars[car_plat]['speed'] + car['speed']) / 2
+    adjust_cars = {car['plat']: car for car in cars}
 
     combination_list = []  # 匹配成功
     filter_vehs = []
@@ -38,6 +27,8 @@ def diff_cars(veh_infos, cars):
     match_plats = [i[0] for i in combination_list]
     filter_cars = {key: value for key, value in adjust_cars.items() if key not in match_plats}
     similar_combination_list, surplus_cars, count = find_close_object(filter_cars, filter_vehs, neighbor_distance)
+
+    # print(similar_combination_list)
 
     new_cars = {}
     for combination in combination_list + similar_combination_list:
@@ -71,11 +62,9 @@ def is_same2(s, j):
 
 def find_close_object(filter_cars, filter_vehs, threshold):
     # 根据车牌，位置，车型等内容为真实车辆匹配仿真车辆
-    start_time = time.time()
     points = filter_cars.values()
     neighbor_relationship = find_neighbor_points(points, filter_vehs, threshold)
 
-    # print("find_neighbor_points", (time.time() - start_time) * 1000)
     count = 0
     similar_combination_list, surplus_cars = [], list(filter_cars.keys())
     for plat, veh_infos in neighbor_relationship.items():
@@ -88,7 +77,6 @@ def find_close_object(filter_cars, filter_vehs, threshold):
                 similar_combination_list.append([plat, veh_info])
                 surplus_cars.remove(plat)
                 break
-    # print('use is_same2',count, (time.time() - start_time) * 1000)
     return similar_combination_list, surplus_cars, count
 
 
@@ -110,7 +98,6 @@ def find_neighbor_points(points, background_points, threshold):
 
     distance_mapping = []
     for point in points:
-        # print("point", point)
         x_class = int(point['x'] // threshold)
         y_class = int(point['y'] // threshold)
 
@@ -143,7 +130,7 @@ def find_neighbor_points(points, background_points, threshold):
     return neighbor_relationship
 
 
-def get_vehi_info(simuiface):
+def get_vehi_info(simuiface, plat_match_mapping):
     """
         汽车数据转换
     Args:
@@ -161,7 +148,7 @@ def get_vehi_info(simuiface):
         }
     ]
     lAllVehi = simuiface.allVehicle()
-    VehisStatus = simuiface.getVehisStatus()
+    VehisStatus = simuiface.getVehisStatus() # 所有正在运行的车辆
 
     VehisStatus_mapping = {
         i.vehiId: i
@@ -191,7 +178,8 @@ def get_vehi_info(simuiface):
                 laneId = laneId_mapping[vehi.lane().link().id()][vehi.lane().number()]
             except:
                 error = str(traceback.format_exc())
-                print("lane_convert error:", error)
+                logging.error(f"lane_convert error: {error}")
+                # print("lane_convert error:", error)
                 continue
 
             origin_data.update(
@@ -204,7 +192,8 @@ def get_vehi_info(simuiface):
                     'lane_number': vehi.lane().number(),
                     'lane_id': vehi.roadId(),
                     'is_link': vehi.roadIsLink(),
-                    #'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
+                    'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
+                    'plats': list(plat_match_mapping.get(vehi.id(), []))
                 }
             )
             data[0]['objs'].append(origin_data)
@@ -214,8 +203,8 @@ def get_vehi_info(simuiface):
 
 def lane_convert(veh):  # tess车道编号从0开始
     if veh.roadIsLink():
-        print(veh.road().id(), veh.lane().number())
+        #print(veh.road().id(), veh.lane().number())
         return laneId_mapping[veh.road().id()][veh.lane().number()]
     else:
-        print(veh.road().fromLink().id(), veh.lane().number())
+        #print(veh.road().fromLink().id(), veh.lane().number())
         return laneId_mapping[veh.road().fromLink().id()][veh.lane().number()]

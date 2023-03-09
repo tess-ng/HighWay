@@ -1,17 +1,15 @@
-import copy
-import datetime
 import json
 import multiprocessing
-import os.path
 import time
 import traceback
 
-from kafka import KafkaProducer, KafkaConsumer, TopicPartition
+from kafka import KafkaProducer, KafkaConsumer
 from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
 from utils.config import max_size, p
+import logging
 
 
 class Producer:
@@ -21,7 +19,8 @@ class Producer:
                                       max_request_size=20 * 1024 * 1024)
 
     def send(self, value):  # key@value 采用同样的key可以保证消息的顺序
-        #return
+        print(json.dumps(value))
+        return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
             self.on_send_error).get()
@@ -32,7 +31,8 @@ class Producer:
 
     # 定义一个发送失败的回调函数
     def on_send_error(self, excp):
-        print(f"send error: {excp}")
+        logging.warning(f"send error: {excp}")
+        # print(f"send error: {excp}")
 
 
 class MyProcess:
@@ -42,7 +42,6 @@ class MyProcess:
         return cls._instance
 
     def __init__(self, config):
-        # self.take_queue = Queue(maxsize=20)
         self.send_queue = Queue(maxsize=200)
         self.websocket_queue = Queue(maxsize=1000)
         self.origin_data = multiprocessing.Manager().dict()
@@ -59,9 +58,6 @@ class MyProcess:
 
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
-        # return
-        # producer 和 users 列表都在子进程初始化，不会影响主进程
-        # height_funs = get_height_funs()
         while True:
             try:
                 producer = Producer(*args)
@@ -69,16 +65,15 @@ class MyProcess:
                     # 不断获取仿真轨迹发送至kafka
                     data = send_queue.get()
                     if len(data[0]["objs"]) > max_size:
-                        print('kafka send size toor longer', len(data[0]["objs"]))
+                        logging.warning(f'kafka send size too longer {len(data[0]["objs"])}')
                         return  # kill 进程，触发重启
                     for obj in data[0]["objs"]:
                         lon, lat = p(obj['x'], -obj['y'], inverse=True)
-                        # obj.update(longitude=lon * 10000000, latitude=lat * 10000000, height=height_funs[obj['lane_number']](lon).tolist())
                         obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000))
                     producer.send(data)
             except:
                 error = str(traceback.format_exc())
-                print("kafka send error:", error)
+                logging.error(f"send error: {json.dumps(error)}")
 
     # 用来读取kafka的雷达轨迹消息
     def take(self, host, port, topic, origin_data):
@@ -108,4 +103,5 @@ class MyProcess:
                         origin_data['data'] = temp_data
             except:
                 error = str(traceback.format_exc())
-                print("send error:", json.dumps(error))
+                logging.error(f"send error: {json.dumps(error)}")
+                # print("send error:", json.dumps(error))
