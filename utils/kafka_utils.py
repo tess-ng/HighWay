@@ -8,7 +8,7 @@ from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, p
+from utils.config import max_size, p, LD_link_mapping
 import logging
 
 
@@ -19,7 +19,8 @@ class Producer:
                                       max_request_size=20 * 1024 * 1024)
 
     def send(self, value):  # key@value 采用同样的key可以保证消息的顺序
-        print(json.dumps(value))
+        print([[i['origin_speed'], i['speed'], i['x']] for i in value[0]['objs']])
+        logging.info(value)
         return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
@@ -88,12 +89,15 @@ class MyProcess:
 
                 for message in consumer:
                     message = json.loads(message.value)
+                    position_id = message.get('positionId')
+                    if position_id not in LD_link_mapping.keys():
+                        continue
                     data = {}
                     for obj in message.get('objs', []):
                         if obj.get("longitude") and obj.get("latitude") and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
                             x, y = p(obj['longitude'] / 10000000, obj['latitude'] / 10000000)
-                            obj.update(x=x, y=-y)
+                            obj.update(x=x, y=-y, position_id=position_id)
                             data[obj.get("vehPlateString")] = obj
 
                     # 尽可能保证不加锁的状态下 数据不会重复取出
@@ -104,4 +108,3 @@ class MyProcess:
             except:
                 error = str(traceback.format_exc())
                 logging.error(f"send error: {json.dumps(error)}")
-                # print("send error:", json.dumps(error))

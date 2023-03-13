@@ -51,11 +51,13 @@ class MyNet(PyCustomerNet):
             nodeInLink = getLinkCenterPoints(link)
             nodeInLink.append(getBoundaryByLink(link))  # val最后一个元素为tuple(当前路段长度，对应总里程)
             centerPoint_table['L' + str(link.id())] = nodeInLink
-        for connector in connectors:
-            # 当前路段下游连接器
-            nodeInConnector = getConnectorCenterPoints(connector)
-            nodeInConnector.append(getBoundaryByConnector(connector))
-            centerPoint_table['C' + str(connector.id())] = nodeInConnector
+
+        # TODO 不在连接段上发车
+        # for connector in connectors:
+        #     # 当前路段下游连接器
+        #     nodeInConnector = getConnectorCenterPoints(connector)
+        #     nodeInConnector.append(getBoundaryByConnector(connector))
+        #     centerPoint_table['C' + str(connector.id())] = nodeInConnector
 
         # 下面注释掉的代码逻辑是：通过插件获取传入的配置对象config，从中获取属性'__simuafterload'值，如果等于True值启动仿真
         plugin = tngPlugin()

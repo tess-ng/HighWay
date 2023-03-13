@@ -5,10 +5,12 @@
 import copy
 
 from VehicleMatch.geoCalculation import *
+from utils.config import LD_link_mapping
 
 
-def findNewPos(currentX, currentY, angle=None):
+def findNewPos(data):
     from MyNet import centerPoint_table
+    currentX, currentY, position_id, angle = data['x'], data['y'], data['position_id'], data['angle']
     '''计算雷达映射车辆在TESS车道中心线上的位置
 
     :param currentX: 传入的待计算新位置的雷达映射车辆的X坐标，单位m
@@ -23,11 +25,14 @@ def findNewPos(currentX, currentY, angle=None):
     currentPos = Point(currentX, currentY)
     minDis, newRoadId, newLaneId = 20, -1, -1  # 最佳匹配点相关属性（距离、路段ID、车道ID）
     for roadId, lanes in centerPoint_table.items():  # 遍历所有road进行路段/连接器匹配
-        if angle is not None:
-            if roadId in ['L5', 'L43', 'L37', 'L4', 'L3','L39','L15'] and (angle < 45 or angle > 225):
-                continue
-            if roadId in ['L6', 'L41', 'L8', 'L9', 'L44', 'L10', 'L21'] and (angle > 45 and angle < 225):
-                continue
+        # if angle is not None:
+        #     if roadId in ['L5', 'L43', 'L37', 'L4', 'L3','L39','L15'] and (angle < 45 or angle > 225):
+        #         continue
+        #     if roadId in ['L6', 'L41', 'L8', 'L9', 'L44', 'L10', 'L21'] and (angle > 45 and angle < 225):
+        #         continue
+        if int(roadId[1:]) not in LD_link_mapping[data['position_id']]:
+            continue
+
         boundary = lanes[-1]
         if not (boundary['min_x'] <= currentX <= boundary['max_x'] and boundary['min_y'] <= currentY <= boundary['max_y']):
             continue

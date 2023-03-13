@@ -4,13 +4,16 @@ import sys
 import collections
 import time
 import traceback
+import logging
+
+from random import choice
 from PySide2.QtCore import *
 from Tessng import *
 from utils.config import buffer_length, smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
-    after_step_interval, after_one_step_interval, reference_time, idle_length
+    after_step_interval, after_one_step_interval, reference_time, idle_length,change_lane_period
 from utils.functions import diff_cars, get_vehi_info
 from VehicleMatch.vehMatch import *
-import logging
+
 
 new_cars = {}
 plat_match_mapping = collections.defaultdict(set)
@@ -18,7 +21,6 @@ plat_match_mapping = collections.defaultdict(set)
 veh_basic_info = collections.defaultdict(
     lambda: {"lane_number": None, 'limit_numbers': [], 'link_id': None, 'speed': m2p(20),
              'delete': False, 'speeds': [], 'init_time': None})
-
 
 # 用户插件子类，代表用户自定义与仿真相关的实现逻辑，继承自PyCustomerSimulator
 #     多重继承中的父类QObject，在此目的是要能够自定义信号signlRunInfo
@@ -80,10 +82,10 @@ class MySimulator(QObject, PyCustomerSimulator):
         # vehi.setSteps_calcSpeedLimitByLane(1)
         # #计算安全变道方法被调用频次
         # vehi.setSteps_calcChangeLaneSafeDist(1)
-        # #重新计算是否可以左强制变道方法被调用频次
-        # vehi.setSteps_reCalcToLeftLane(1)
-        # #重新计算是否可以右强制变道方法被调用频次
-        # vehi.setSteps_reCalcToRightLane(1)
+        #重新计算是否可以左强制变道方法被调用频次
+        vehi.setSteps_reCalcToLeftLane(change_lane_period)
+        #重新计算是否可以右强制变道方法被调用频次
+        vehi.setSteps_reCalcToRightLane(change_lane_period)
         # #重新计算是否可以左自由变道方法被调用频次
         # vehi.setSteps_reCalcToLeftFreely(1)
         # # 重新计算是否可以右自由变道方法被调用频次
@@ -141,7 +143,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         # 匹配成功，删除轨迹
         del new_cars[plat]
 
-        position_car = findNewPos(data['x'], data['y'], data['angle'])
+        position_car = findNewPos(data)
         if not (position_car and position_car[4] == "L"):  # 只能在Link上重置 TODO 如果不是在路段上，设定期望路径
             return
 
@@ -192,7 +194,7 @@ class MySimulator(QObject, PyCustomerSimulator):
     # 过载的父类方法，TESS NG 在每个计算周期结束后调用此方法，大量用户逻辑在此实现，注意耗时大的计算要尽可能优化，否则影响运行效率
     def afterOneStep(self):
         logging.info(f"start_afterOneStep: {time.time()}")
-        print("start_afterOneStep:", time.time())
+        #print("start_afterOneStep:", time.time())
         global veh_basic_info, new_cars, plat_match_mapping
 
         my_process = sys.modules["__main__"].__dict__['myprocess']
@@ -213,22 +215,20 @@ class MySimulator(QObject, PyCustomerSimulator):
         # TODO 实时获取仿真车辆信息,发送至队列
         vehs_data, link_veh_mapping = get_vehi_info(simuiface, plat_match_mapping)
         send_queue = my_process.send_queue
-        # websocket_queue = my_process.websocket_queue
         try:
             send_queue.put_nowait(vehs_data)
         except:
             logging.warning('send_queue is full')
-            # print('send_queue is full')
 
         timestamp = time.time()
         # 每n秒执行一次
         if timestamp - my_process.origin_data['timestamp'] < after_one_step_interval:
             return
 
-        # 更新 plat_match_mapping 表
+        # 更新 link_veh_mapping 表
         if random.randint(0, 100) == 0:
             veh_ids = {veh.id(): True for veh in lAllVehi}
-            for key in plat_match_mapping.keys():
+            for key in list(plat_match_mapping.keys()):
                 if not veh_ids.get(key):
                     del plat_match_mapping[key]
             logging.info(f'plat_match_mapping: {len(plat_match_mapping)}, {plat_match_mapping}')
@@ -241,7 +241,6 @@ class MySimulator(QObject, PyCustomerSimulator):
         except:
             error = str(traceback.format_exc())
             logging.error(f'origin_data get error: {error}')
-            # print("origin_data get error:", error)
             return
 
         # 原始数据需要调整, plat 必定存在,所以初始化的车牌必定存在，且作为标准值
@@ -271,7 +270,6 @@ class MySimulator(QObject, PyCustomerSimulator):
         new_cars, surplus_cars = diff_cars(veh_infos, new_frame_data)
 
         logging.info(f"middle_afterOneStep: {time.time()}, {len(new_cars)}, {len(surplus_cars)}, {len(new_frame_data)}, {len(new_cars)}")
-        # print("middle_afterOneStep:", time.time(), len(new_cars), len(surplus_cars), len(new_frame_data), len(new_cars))
         # 针对没有匹配到tessng车辆的车辆进行发车
         create_car_count = 0
         for plat in surplus_cars:
@@ -285,7 +283,7 @@ class MySimulator(QObject, PyCustomerSimulator):
                 create_car_count += 1
                 veh_basic_info[veh.id()].update(
                     {
-                        "speed": data['origin_speed'],
+                        "speed": data['origin_speed'] * 1.5,
                         "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
                         'sim': [data['x'], data['y']],
                         'real': [data['x'], data['y']],
@@ -294,25 +292,31 @@ class MySimulator(QObject, PyCustomerSimulator):
                 veh_basic_info[veh.id()]['speeds'].append(data['origin_speed'])
                 # 添加车牌映射表
                 plat_match_mapping[veh.id()].add(plat)
+                link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
 
         logging.info(f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
-        # print("end_afterOneStep:", time.time(), "create_car_count:", create_car_count, "car_count", len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()]))
         return
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
         link_veh_mapping = link_veh_mapping or {}
-        position_car = findNewPos(data['x'], data['y'], data['angle'])
+        position_car = findNewPos(data)
         if position_car and position_car[4] == 'L':  # 只做路段发车
-
             # TODO 判断车辆最近点距离，距离过小时不进行创建
             link = netiface.findLink(position_car[0])
-            lane = link.lanes()[position_car[1]]
+
             disInRoad = position_car[2]
-            for distance in link_veh_mapping.get(lane.id(), []):  # disInRoad
-                if abs(distance - disInRoad) < idle_length:
-                    logging.info(f"veh exist, distance:{distance}, disInRoad: {disInRoad}")
-                    # print('veh exist', distance, disInRoad)
-                    return
+            user_lanes = []
+            for lane in link.lanes():
+                find = True
+                for distance in link_veh_mapping.get(lane.id(), []):  # disInRoad
+                    if abs(distance - disInRoad) < idle_length:
+                        find = False
+                        break
+                if find:
+                    user_lanes.append(lane)
+            print('numbers', [i.number() for i in user_lanes])
+            if not user_lanes:
+                return
 
             dvp = Online.DynaVehiParam()
             # TODO 车型，颜色
@@ -325,7 +329,9 @@ class MySimulator(QObject, PyCustomerSimulator):
             lane_count = len(link.lanes())
             lane_id = max(min(lane_id, lane_count), 1)  # 从 0 开始 输出我就不知道
             lane_number = max(lane_count - lane_id, 0)
-            dvp.laneNumber = random.randint(0, 2)  # lane_number
+            
+            #dvp.laneNumber = random.randint(0, 2)  # lane_number
+            dvp.laneNumber = choice(user_lanes).number()  # lane_number
             # if not position_car[4] == 'L':
             #     dvp.toLaneNumber = lane_number
             # print('lane_number', lane_number)
@@ -351,3 +357,4 @@ class MySimulator(QObject, PyCustomerSimulator):
     #    if veh_basic_info[veh.id()]['delete']:
     #        return True
     #    return False
+
