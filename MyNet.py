@@ -31,19 +31,6 @@ class MyNet(PyCustomerNet):
         '''获取路网中所有Link与Connector之间的拓扑关系'''
         links = netiface.links()
         connectors = netiface.connectors()
-        for link in links:
-            netTopo_table[link.id()] = [0, 0]  # 分别代表前导连接器与后续连接器ID
-        for connector in connectors:
-            preLink = connector.fromLink()
-            nextLink = connector.toLink()
-            netTopo_table[preLink.id()][1] = connector.id()
-            netTopo_table[nextLink.id()][0] = connector.id()
-
-        '''按照路网拓扑顺序将各Link/Connetor的车道/车道连接的中心线断点序列提取至哈希表，供匹配查询'''
-        startLinkID = []  # 找到所有起始Link，上下行方向各一条
-        for key, val in netTopo_table.items():
-            if not val[0] and val[1]:  # 没有前导连接器但有后续连接器的Link即是起始Link
-                startLinkID.append(key)
 
         # 按照拓扑关系，提取每个独立路径的中心线断点，及对应分段在路网对应的总里程
         for link in links:

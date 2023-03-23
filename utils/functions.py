@@ -9,35 +9,34 @@ import difflib
 import numpy as np
 
 from Tessng import *
-from utils.config import neighbor_distance, laneId_mapping
+from utils.config import neighbor_distance, laneId_mapping, match_attributes, diff_attributes
 
 
-def diff_cars(veh_infos, cars):
-    adjust_cars = {car['plat']: car for car in cars}
+def diff_cars(veh_infos, origin_cars):
+    # adjust_cars = {car['plat']: car for car in cars}
 
     combination_list = []  # 匹配成功
     filter_vehs = []
     for veh_info in veh_infos:
         car_plat = veh_info['plat']
-        if adjust_cars.get(car_plat):
+        if origin_cars.get(car_plat):
             combination_list.append([car_plat, veh_info])  # 车牌相同，匹配成功
         else:
             filter_vehs.append(veh_info)
+
     # 未能匹配成功的 veh，car
     match_plats = [i[0] for i in combination_list]
-    filter_cars = {key: value for key, value in adjust_cars.items() if key not in match_plats}
-    similar_combination_list, surplus_cars, count = find_close_object(filter_cars, filter_vehs, neighbor_distance)
-
-    # print(similar_combination_list)
+    filter_cars = {key: value for key, value in origin_cars.items() if key not in match_plats}
+    similar_combination_list, surplus_cars = find_close_object(filter_cars, filter_vehs, neighbor_distance)
 
     new_cars = {}
     for combination in combination_list + similar_combination_list:
         car_plat, veh_info = combination
         # print("new car", veh_info, new_cars, adjust_cars)
-        new_cars[veh_info['plat']] = adjust_cars[car_plat]
+        new_cars[veh_info['plat']] = origin_cars[car_plat]
 
     for car_plat in surplus_cars:
-        new_cars[car_plat] = adjust_cars[car_plat]
+        new_cars[car_plat] = origin_cars[car_plat]
 
     # 最新调整/分配后的轨迹，以及未能匹配上tessng车辆的真实轨迹
     return new_cars, surplus_cars
@@ -55,7 +54,7 @@ def is_same(s, j, count=1):
 
 
 def is_same2(s, j):
-    if difflib.SequenceMatcher(None, s, j).quick_ratio() > 0.7:
+    if difflib.SequenceMatcher(None, s, j).quick_ratio() > 0.8:
         return True
     return False
 
@@ -63,29 +62,28 @@ def is_same2(s, j):
 def find_close_object(filter_cars, filter_vehs, threshold):
     # 根据车牌，位置，车型等内容为真实车辆匹配仿真车辆
     points = filter_cars.values()
-    neighbor_relationship = find_neighbor_points(points, filter_vehs, threshold)
+    neighbor_relationship = find_neighbor_points(points, filter_vehs, threshold, match_attributes=match_attributes, diff_attributes=diff_attributes)
 
-    count = 0
     similar_combination_list, surplus_cars = [], list(filter_cars.keys())
     for plat, veh_infos in neighbor_relationship.items():
-        car_type = int(float(filter_cars[plat]['type'] or 13))
+        # car_type = int(float(filter_cars[plat]['car_type'] or 13))
         for veh_info in veh_infos:
-            count += 1
             # 车型和车牌匹配成功，返回
             # if veh.vehicleTypeCode() == tessng_car_type and is_same(plat, veh.name(), 1):
             if is_same2(plat, veh_info['plat']):
                 similar_combination_list.append([plat, veh_info])
                 surplus_cars.remove(plat)
                 break
-    return similar_combination_list, surplus_cars, count
+    return similar_combination_list, surplus_cars
 
 
-def find_neighbor_points(points, background_points, threshold):
+def find_neighbor_points(points, background_points, threshold, match_attributes=None, diff_attributes=None):
     """
     寻找当前点周围 X 距离内的其他点
     :param points: 观测点
     :param background_points: 背景点序列
     :param threshold: 距离 X
+    :param other_attributes: 必须确保属性相同
     :return:
     """
     point_class = collections.defaultdict(list)
@@ -107,6 +105,21 @@ def find_neighbor_points(points, background_points, threshold):
                 temp_class_name = f"{temp_x_class}_{temp_y_class}"
                 # 遍历区域内的所有点，进行计算
                 for background_point in point_class[temp_class_name]:
+
+                    # 属性均存在但不相等时，取消对比资格(例如车辆类型)
+                    is_skip = False
+                    for attribute in match_attributes or []:
+                        if point.get(attribute) is not None and background_point.get(attribute) is not None and point[attribute] != background_point[attribute]:
+                            is_skip = True
+                            break
+                    # 属性均存在且相等时，取消对比资格(例如针对同一雷达，车牌号必须相等)
+                    for attribute in diff_attributes:
+                        if point.get(attribute) is not None and background_point.get(attribute) is not None and point[attribute] == background_point[attribute]:
+                            is_skip = True
+                            break
+                    if is_skip:
+                        continue
+
                     distance = np.sqrt(
                         np.square(point['x'] - background_point['x']) + np.square(point['y'] - background_point['y']))
 
@@ -130,7 +143,7 @@ def find_neighbor_points(points, background_points, threshold):
     return neighbor_relationship
 
 
-def get_vehi_info(simuiface, plat_match_mapping):
+def get_vehi_info(simuiface):
     """
         汽车数据转换
     Args:
@@ -171,7 +184,7 @@ def get_vehi_info(simuiface, plat_match_mapping):
     for vehi in lAllVehi:
         vehiStatus = VehisStatus_mapping.get(vehi.id())
         if vehiStatus:
-            origin_data = json.loads(vehi.name())
+            origin_data = vehi.jsonInfo()
             mPoint = get_attr(vehiStatus, 'mPoint')
 
             try:
@@ -193,7 +206,7 @@ def get_vehi_info(simuiface, plat_match_mapping):
                     'lane_id': vehi.roadId(),
                     'is_link': vehi.roadIsLink(),
                     'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
-                    'plats': list(plat_match_mapping.get(vehi.id(), []))
+                    'plats': vehi.jsonInfo()['plats'],
                 }
             )
             data[0]['objs'].append(origin_data)
@@ -208,3 +221,4 @@ def lane_convert(veh):  # tess车道编号从0开始
     else:
         #print(veh.road().fromLink().id(), veh.lane().number())
         return laneId_mapping[veh.road().fromLink().id()][veh.lane().number()]
+

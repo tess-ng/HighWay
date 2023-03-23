@@ -5,7 +5,6 @@ from PySide2.QtWidgets import *
 
 from Tessng import TessPlugin
 from MyNet import *
-# from MySimulator_smooth_allroad import *
 from MySimulator import *
 from TESS_API_EXAMPLE import *
 

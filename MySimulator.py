@@ -10,13 +10,14 @@ from random import choice
 from PySide2.QtCore import *
 from Tessng import *
 from utils.config import buffer_length, smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
-    after_step_interval, after_one_step_interval, reference_time, idle_length,change_lane_period
+    after_step_interval, after_one_step_interval, reference_time, idle_length, change_lane_period, LD_groups, \
+    LD_group_mapping
 from utils.functions import diff_cars, get_vehi_info
 from VehicleMatch.vehMatch import *
 
 
 new_cars = {}
-plat_match_mapping = collections.defaultdict(set)
+# plat_match_mapping = collections.defaultdict(set)
 
 veh_basic_info = collections.defaultdict(
     lambda: {"lane_number": None, 'limit_numbers': [], 'link_id': None, 'speed': m2p(20),
@@ -127,24 +128,29 @@ class MySimulator(QObject, PyCustomerSimulator):
         return True
 
     def afterStep(self, veh):
-        global new_cars, veh_basic_info, plat_match_mapping
+        global new_cars, veh_basic_info
         iface = tessngIFace()
         simuiface = iface.simuInterface()
         netiface = iface.netInterface()
 
-        plat = json.loads(veh.name())['plat']
+        json_info = veh.jsonInfo()
+        plat = json_info['plat']
         data = new_cars.get(plat)
 
         # 没有真实轨迹，不参与计算
         if not data:
             return
 
-        plat_match_mapping[veh.id()].add(data['plat'])
+        # plat_match_mapping[veh.id()].add(data['plat'])
         # 匹配成功，删除轨迹
         del new_cars[plat]
+        # 添加被匹配的车牌号
+        if data['plat'] not in json_info['plats']:
+            veh.setJsonProperty('plats', json_info['plats'] + [data['plat']])
+
 
         position_car = findNewPos(data)
-        if not (position_car and position_car[4] == "L"):  # 只能在Link上重置 TODO 如果不是在路段上，设定期望路径
+        if not (position_car and position_car[3] == "L"):  # 只能在Link上重置 TODO 如果不是在路段上，设定期望路径
             return
 
         link = netiface.findLink(position_car[0])
@@ -161,12 +167,12 @@ class MySimulator(QObject, PyCustomerSimulator):
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
         # 在路段的起终位置进行映射，其他位置仿真
-        ans = position_car[5]
+        ans = position_car[4]
         real_positon = [ans.x, ans.y]
         sim_position = [p2m(veh.pos().x()), p2m(veh.pos().y())]
 
         # 计算车辆位置差异与前进方向的余弦值
-        driving_direction_vector = position_car[6]  # 行进方向
+        driving_direction_vector = position_car[5]  # 行进方向
         real_sim_diff_vector = Vector(Point(*sim_position), Point(*real_positon))  # 仿真向真实趋近
         x = np.array([driving_direction_vector.x, driving_direction_vector.y])  # 仿真车辆所在车道点中心线的向量
         y = np.array([real_sim_diff_vector.x, real_sim_diff_vector.y])  # 真实位置与仿真位置对比向量
@@ -194,8 +200,7 @@ class MySimulator(QObject, PyCustomerSimulator):
     # 过载的父类方法，TESS NG 在每个计算周期结束后调用此方法，大量用户逻辑在此实现，注意耗时大的计算要尽可能优化，否则影响运行效率
     def afterOneStep(self):
         logging.info(f"start_afterOneStep: {time.time()}")
-        #print("start_afterOneStep:", time.time())
-        global veh_basic_info, new_cars, plat_match_mapping
+        global veh_basic_info, new_cars
 
         my_process = sys.modules["__main__"].__dict__['myprocess']
 
@@ -213,7 +218,10 @@ class MySimulator(QObject, PyCustomerSimulator):
 
         # 当前正在运行车辆列表
         # TODO 实时获取仿真车辆信息,发送至队列
-        vehs_data, link_veh_mapping = get_vehi_info(simuiface, plat_match_mapping)
+        vehs_data, link_veh_mapping = get_vehi_info(simuiface)
+        # print([for obj in data[0]['objs']])
+
+
         send_queue = my_process.send_queue
         try:
             send_queue.put_nowait(vehs_data)
@@ -225,17 +233,17 @@ class MySimulator(QObject, PyCustomerSimulator):
         if timestamp - my_process.origin_data['timestamp'] < after_one_step_interval:
             return
 
-        # 更新 link_veh_mapping 表
-        if random.randint(0, 100) == 0:
-            veh_ids = {veh.id(): True for veh in lAllVehi}
-            for key in list(plat_match_mapping.keys()):
-                if not veh_ids.get(key):
-                    del plat_match_mapping[key]
-            logging.info(f'plat_match_mapping: {len(plat_match_mapping)}, {plat_match_mapping}')
+        # # 更新 link_veh_mapping 表
+        # if random.randint(0, 100) == 0:
+        #     veh_ids = {veh.id(): True for veh in lAllVehi}
+        #     for key in list(plat_match_mapping.keys()):
+        #         if not veh_ids.get(key):
+        #             del plat_match_mapping[key]
+        #     logging.info(f'plat_match_mapping: {len(plat_match_mapping)}, {plat_match_mapping}')
 
         logging.info(f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         try:
-            origin_data = my_process.origin_data['data']
+            origin_cars = my_process.origin_data['data']
             my_process.origin_data['data'] = {}
             my_process.origin_data['timestamp'] = timestamp
         except:
@@ -244,66 +252,87 @@ class MySimulator(QObject, PyCustomerSimulator):
             return
 
         # 原始数据需要调整, plat 必定存在,所以初始化的车牌必定存在，且作为标准值
-        new_frame_data = []
-        for plat, i in origin_data.items():
-            new_frame_data.append(
+        # new_frame_data = []
+        # for plat, i in origin_data.items():
+        #     new_frame_data.append(
+        #         {
+        #             **i,
+        #             'plat': plat,
+        #             'angle': i.get('angleGps') / 10 if i.get('angleGps') is not None else i.get('angleGps'),
+        #             'origin_speed': i.get('speed', 2000) / 100,
+        #             'type': i.get('vehType') or 1,
+        #             'lane_id': i.get('laneId') or 1,
+        #         }
+        #     )
+
+        veh_groups = [[]] * len(LD_groups)
+        for veh in lAllVehi:  # 已经驶离路网的仍需要被记录，否则可能在末端位置重复创建
+            json_info = veh.jsonInfo()
+            position_id = json_info['position_id']
+            veh_groups[LD_group_mapping[position_id]['index']].append(
                 {
-                    **i,
-                    'plat': plat,
-                    'angle': i.get('angleGps') / 10 if i.get('angleGps') is not None else i.get('angleGps'),
-                    'origin_speed': i.get('speed', 2000) / 100,
-                    'type': i.get('vehType') or 1,
-                    'lane_id': i.get('laneId') or 1,
+                    'x': p2m(veh.pos().x()),
+                    'y': p2m(veh.pos().y()),
+                    'plat': json_info['plat'],
+                    'car_type': json_info['car_type'],
+                    'position_id': json_info['position_id'],
+                    # 'name': veh.name(),
+                    # 'json_info': json_info
                 }
             )
 
-        # 对所有车辆从车牌，位置间进行匹配
-        veh_infos = [
-            {
-                'x': p2m(veh.pos().x()),
-                'y': p2m(veh.pos().y()),
-                'plat': json.loads(veh.name())['plat'],
-                'name': veh.name(),
-            } for veh in lAllVehi  # if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()
-        ]
-        # 对所有车辆从车牌，位置间进行匹配
-        new_cars, surplus_cars = diff_cars(veh_infos, new_frame_data)
+        origin_car_groups = [{}] * len(LD_groups)
+        for plat, car in origin_cars.items():
+            position_id = car['position_id']
+            origin_car_groups[LD_group_mapping[position_id]['index']][plat] = car
 
-        logging.info(f"middle_afterOneStep: {time.time()}, {len(new_cars)}, {len(surplus_cars)}, {len(new_frame_data)}, {len(new_cars)}")
-        # 针对没有匹配到tessng车辆的车辆进行发车
         create_car_count = 0
-        for plat in surplus_cars:
-            data = new_cars[plat]
-            del new_cars[plat]
+        # 车牌匹配时需要考虑雷达分组，只有在同一组内的车辆才会一起进行比较
+        for index, _ in enumerate(LD_groups):
+            veh_infos = veh_groups[index]
+            group_origin_cars = origin_car_groups[index]
+            # 对所有车辆从车牌，位置间进行匹配
+            new_cars, surplus_cars = diff_cars(veh_infos, group_origin_cars)
 
-            veh = self.create_car(netiface, simuiface, data, link_veh_mapping)
-            if veh:
-                # 创建和移除时都会更新字典，时刻保证 radarToTess 与 路网车辆的唯一映射
-                self.setStepsPerCall(veh)
-                create_car_count += 1
-                veh_basic_info[veh.id()].update(
-                    {
-                        "speed": data['origin_speed'] * 1.5,
-                        "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
-                        'sim': [data['x'], data['y']],
-                        'real': [data['x'], data['y']],
-                    }
-                )
-                veh_basic_info[veh.id()]['speeds'].append(data['origin_speed'])
-                # 添加车牌映射表
-                plat_match_mapping[veh.id()].add(plat)
-                link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
+            # 针对没有匹配到tessng车辆的车辆进行发车
+            for plat in surplus_cars:
+                data = new_cars[plat]
+                # 只对部分雷达进行发车逻辑
+                if data['position_id'] not in LD_run_link_mapping.keys():
+                    continue
+
+                veh = self.create_car(netiface, simuiface, data, link_veh_mapping)
+                if veh:
+                    del new_cars[plat]
+                    # 创建和移除时都会更新字典，时刻保证 radarToTess 与 路网车辆的唯一映射
+                    self.setStepsPerCall(veh)
+                    # 设置属性
+                    data.update(plats=[plat])
+                    veh.setJsonInfo(data)
+
+                    create_car_count += 1
+                    veh_basic_info[veh.id()].update(
+                        {
+                            "speed": data['origin_speed'],  # TODO 暂时取消1.5倍的加速
+                            "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
+                            'sim': [data['x'], data['y']],
+                            'real': [data['x'], data['y']],
+                        }
+                    )
+                    veh_basic_info[veh.id()]['speeds'].append(data['origin_speed'])
+                    # 添加车牌映射表
+                    # plat_match_mapping[veh.id()].add(plat)
+                    link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
 
         logging.info(f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         return
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
         link_veh_mapping = link_veh_mapping or {}
-        position_car = findNewPos(data)
-        if position_car and position_car[4] == 'L':  # 只做路段发车
-            # TODO 判断车辆最近点距离，距离过小时不进行创建
+        position_car = findNewPos(data, create=True)
+        if position_car and position_car[3] == 'L':  # 只做路段发车
+            # TODO 判断车辆最近点距离，距离过小时不进行创建,需要取消此逻辑
             link = netiface.findLink(position_car[0])
-
             disInRoad = position_car[2]
             user_lanes = []
             for lane in link.lanes():
@@ -314,31 +343,28 @@ class MySimulator(QObject, PyCustomerSimulator):
                         break
                 if find:
                     user_lanes.append(lane)
-            print('numbers', [i.number() for i in user_lanes])
             if not user_lanes:
-                return
+                user_lanes = link.lanes()
+                disInRoad = 0
+                # return
 
             dvp = Online.DynaVehiParam()
             # TODO 车型，颜色
-            dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data.get('type') or 1)), 13)
+            dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data['car_type'] or 1)), 13)
             dvp.roadId = position_car[0]
 
             # 重设 lane_number
-            lane_id = data.get('lane_id') or 1
-            link = netiface.findLink(position_car[0])
-            lane_count = len(link.lanes())
-            lane_id = max(min(lane_id, lane_count), 1)  # 从 0 开始 输出我就不知道
-            lane_number = max(lane_count - lane_id, 0)
+            # lane_id = data.get('lane_id') or 1
+            # link = netiface.findLink(position_car[0])
+            # lane_count = len(link.lanes())
+            # lane_id = max(min(lane_id, lane_count), 1)  # 从 0 开始 输出我就不知道
+            # lane_number = max(lane_count - lane_id, 0)
             
-            #dvp.laneNumber = random.randint(0, 2)  # lane_number
             dvp.laneNumber = choice(user_lanes).number()  # lane_number
-            # if not position_car[4] == 'L':
-            #     dvp.toLaneNumber = lane_number
-            # print('lane_number', lane_number)
-            dvp.dist = position_car[2]
+            dvp.dist = disInRoad
             dvp.speed = data['origin_speed']
-            other_json = json.dumps(data)
-            dvp.name = other_json
+            # other_json = json.dumps(data)
+            dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
             veh = simuiface.createGVehicle(dvp)
             return veh
 

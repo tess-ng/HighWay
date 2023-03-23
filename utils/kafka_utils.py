@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import random
 import time
 import traceback
 
@@ -8,7 +9,7 @@ from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, p, LD_link_mapping
+from utils.config import max_size, p, LD_group_mapping
 import logging
 
 
@@ -19,8 +20,12 @@ class Producer:
                                       max_request_size=20 * 1024 * 1024)
 
     def send(self, value):  # key@value 采用同样的key可以保证消息的顺序
-        print([[i['origin_speed'], i['speed'], i['x']] for i in value[0]['objs']])
-        logging.info(value)
+        #print([[i['origin_speed'], i['speed'], i['x']] for i in value[0]['objs']])
+        #logging.info(value)
+        import random
+        if random.randint(0, 100) == 0:
+            with open('demo.log', 'a+') as file:
+                file.write(json.dumps(value) + "\n")
         return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
@@ -33,7 +38,6 @@ class Producer:
     # 定义一个发送失败的回调函数
     def on_send_error(self, excp):
         logging.warning(f"send error: {excp}")
-        # print(f"send error: {excp}")
 
 
 class MyProcess:
@@ -90,16 +94,41 @@ class MyProcess:
                 for message in consumer:
                     message = json.loads(message.value)
                     position_id = message.get('positionId')
-                    if position_id not in LD_link_mapping.keys():
+
+                    # 只记录被配置的雷达编号
+                    if position_id not in LD_group_mapping.keys():
                         continue
+
                     data = {}
                     for obj in message.get('objs', []):
                         if obj.get("longitude") and obj.get("latitude") and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
                             x, y = p(obj['longitude'] / 10000000, obj['latitude'] / 10000000)
-                            obj.update(x=x, y=-y, position_id=position_id)
+                            # obj.update(x=x, y=-y, position_id=position_id)
+                            # obj.update(x=x, y=-y)
+
+                            obj.update(
+                                {
+                                    "x": x,
+                                    "y": -y,
+                                    'plat': obj['vehPlateString'],
+                                    'origin_angle': obj.get('angleGps') and obj.get('angleGps') / 10,
+                                    'origin_speed': obj.get('speed', 2000) / 100,
+                                    'car_type': obj.get('vehType'),
+                                    'lane_id': obj.get('laneId') or 1,
+                                    'position_id': position_id,
+                                }
+                            )
+
+                            # 对于超限车随机赋长宽高
+                            if random.randint(0, 100) == 0:
+                                if obj.get('vehType') == 5:
+                                    obj.update(objLength=1850, objWidth=275, objHeight=412)
+                                elif obj.get('vehType') == 9:
+                                    obj.update(objLength=1830, objWidth=281, objHeight=419)
                             data[obj.get("vehPlateString")] = obj
 
+                    # TODO 取数据时不对车辆进行雷达分组，仍然以最新的数据为准
                     # 尽可能保证不加锁的状态下 数据不会重复取出
                     temp_data = origin_data['data']
                     temp_data.update(data)
