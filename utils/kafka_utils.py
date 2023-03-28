@@ -9,10 +9,11 @@ from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, p, LD_group_mapping
+from utils.config import max_size, p, LD_group_mapping, log_name
 import logging
 
 
+logger = logging.getLogger(log_name)
 class Producer:
     def __init__(self, host, port, topic):
         self.topic = topic
@@ -37,7 +38,7 @@ class Producer:
 
     # 定义一个发送失败的回调函数
     def on_send_error(self, excp):
-        logging.warning(f"send error: {excp}")
+        logger.warning(f"send error: {excp}")
 
 
 class MyProcess:
@@ -48,7 +49,7 @@ class MyProcess:
 
     def __init__(self, config):
         self.send_queue = Queue(maxsize=200)
-        self.websocket_queue = Queue(maxsize=1000)
+        self.websocket_queue = Queue(maxsize=200)
         self.origin_data = multiprocessing.Manager().dict()
         self.origin_data['data'] = {}
         self.origin_data['timestamp'] = time.time()
@@ -70,7 +71,7 @@ class MyProcess:
                     # 不断获取仿真轨迹发送至kafka
                     data = send_queue.get()
                     if len(data[0]["objs"]) > max_size:
-                        logging.warning(f'kafka send size too longer {len(data[0]["objs"])}')
+                        logger.error(f'kafka send size too longer {len(data[0]["objs"])}')
                         return  # kill 进程，触发重启
                     for obj in data[0]["objs"]:
                         lon, lat = p(obj['x'], -obj['y'], inverse=True)
@@ -78,7 +79,7 @@ class MyProcess:
                     producer.send(data)
             except:
                 error = str(traceback.format_exc())
-                logging.error(f"send error: {json.dumps(error)}")
+                logger.error(f"send error: {json.dumps(error)}")
 
     # 用来读取kafka的雷达轨迹消息
     def take(self, host, port, topic, origin_data):
@@ -104,8 +105,6 @@ class MyProcess:
                         if obj.get("longitude") and obj.get("latitude") and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
                             x, y = p(obj['longitude'] / 10000000, obj['latitude'] / 10000000)
-                            # obj.update(x=x, y=-y, position_id=position_id)
-                            # obj.update(x=x, y=-y)
 
                             obj.update(
                                 {
@@ -120,7 +119,7 @@ class MyProcess:
                                 }
                             )
 
-                            # 对于超限车随机赋长宽高
+                            # TODO 对于超限车随机赋长宽高
                             if random.randint(0, 100) == 0:
                                 if obj.get('vehType') == 5:
                                     obj.update(objLength=1850, objWidth=275, objHeight=412)
@@ -136,4 +135,4 @@ class MyProcess:
                         origin_data['data'] = temp_data
             except:
                 error = str(traceback.format_exc())
-                logging.error(f"send error: {json.dumps(error)}")
+                logger.error(f"kafka take error: {json.dumps(error)}")

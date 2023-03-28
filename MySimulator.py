@@ -11,17 +11,14 @@ from PySide2.QtCore import *
 from Tessng import *
 from utils.config import buffer_length, smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
     after_step_interval, after_one_step_interval, reference_time, idle_length, change_lane_period, LD_groups, \
-    LD_group_mapping
+    LD_group_mapping, network_min_speed, log_name
 from utils.functions import diff_cars, get_vehi_info
 from VehicleMatch.vehMatch import *
 
 
+logger = logging.getLogger(log_name)
 new_cars = {}
-# plat_match_mapping = collections.defaultdict(set)
 
-veh_basic_info = collections.defaultdict(
-    lambda: {"lane_number": None, 'limit_numbers': [], 'link_id': None, 'speed': m2p(20),
-             'delete': False, 'speeds': [], 'init_time': None})
 
 # 用户插件子类，代表用户自定义与仿真相关的实现逻辑，继承自PyCustomerSimulator
 #     多重继承中的父类QObject，在此目的是要能够自定义信号signlRunInfo
@@ -33,14 +30,6 @@ class MySimulator(QObject, PyCustomerSimulator):
     def __init__(self):
         QObject.__init__(self)
         PyCustomerSimulator.__init__(self)
-        # 车辆方阵的车辆数
-        self.mrSquareVehiCount = 28
-        # 飞机速度，飞机后面的车辆速度会被设定为此数据
-        self.mrSpeedOfPlane = 0
-        # 当前正在仿真计算的路网名称
-        self.mNetPath = None
-        # 相同路网连续仿真次数
-        # self.mSimuCount = 0
 
     def ref_beforeStart(self, ref_keepOn):
         iface = tessngIFace()
@@ -112,23 +101,23 @@ class MySimulator(QObject, PyCustomerSimulator):
         # vehi.setSteps_beforeNextRoad(1)
 
     def ref_reSetSpeed(self, veh, ref_inOutSpeed):
-        global veh_basic_info
         iface = tessngIFace()
         simuiface = iface.simuInterface()
+        json_info = veh.jsonInfo()
 
         # 在约定周期内，进行速度较准
         # 超出设定期限后(smoothing_time)重设期望速度  一旦进入仿真，重置期望速度至平均速度
-        if veh_basic_info[veh.id()]['init_time'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
-                veh_basic_info[veh.id()]['init_time'] < smoothing_time:
-            ref_inOutSpeed.value = m2p(veh_basic_info[veh.id()]['speed'])
+        if json_info['init_time'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
+                json_info['init_time'] < smoothing_time:
+            ref_inOutSpeed.value = m2p(json_info['speed'])
         # 否则采用多段平均速度作为期望速度
-        elif veh_basic_info[veh.id()]['speeds'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
-                veh_basic_info[veh.id()]['init_time'] < reference_time:
-            ref_inOutSpeed.value = m2p(np.mean(veh_basic_info[veh.id()]['speeds'][-3:]))
+        elif json_info['speeds'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
+                json_info['init_time'] < reference_time:
+            ref_inOutSpeed.value = m2p(np.mean(json_info['speeds'][-3:]))
         return True
 
     def afterStep(self, veh):
-        global new_cars, veh_basic_info
+        global new_cars
         iface = tessngIFace()
         simuiface = iface.simuInterface()
         netiface = iface.netInterface()
@@ -140,29 +129,29 @@ class MySimulator(QObject, PyCustomerSimulator):
         # 没有真实轨迹，不参与计算
         if not data:
             return
-
-        # plat_match_mapping[veh.id()].add(data['plat'])
         # 匹配成功，删除轨迹
         del new_cars[plat]
+
         # 添加被匹配的车牌号
         if data['plat'] not in json_info['plats']:
             veh.setJsonProperty('plats', json_info['plats'] + [data['plat']])
 
+        # position_car = findNewPos(data)
+        # if not (position_car and position_car[3] == "L"):  # 只能在Link上重置 TODO 如果不是在路段上，设定期望路径
+        #     return
+        # TODO 调整为 网格化的移动
+        netiface.locateOnCrid(QPointF(data['x']))
 
-        position_car = findNewPos(data)
-        if not (position_car and position_car[3] == "L"):  # 只能在Link上重置 TODO 如果不是在路段上，设定期望路径
-            return
-
-        link = netiface.findLink(position_car[0])
-        veh_basic_info[veh.id()]['road_id'] = position_car[0]
-        lane_id = data['lane_id']
-        if lane_id is not None:
-            lane_count = len(link.lanes())
-            lane_id = max(min(lane_id, lane_count), 1)  # 为什么用最左侧车道容易崩溃
-            lane_number = lane_count - lane_id
-            veh_basic_info[veh.id()]['lane_number'] = lane_number
-            limit_numbers = [_.number() for _ in link.lanes() if _.number() != lane_number]
-            veh_basic_info[veh.id()]['limit_numbers'] = limit_numbers  # 在同一路段上添加车道限行
+        # link = netiface.findLink(position_car[0])
+        # veh_basic_info[veh.id()]['road_id'] = position_car[0]
+        # lane_id = data['lane_id']
+        # if lane_id is not None:
+        #     lane_count = len(link.lanes())
+        #     lane_id = max(min(lane_id, lane_count), 1)
+        #     lane_number = lane_count - lane_id
+        #     veh_basic_info[veh.id()]['lane_number'] = lane_number
+        #     limit_numbers = [_.number() for _ in link.lanes() if _.number() != lane_number]
+        #     veh_basic_info[veh.id()]['limit_numbers'] = limit_numbers  # 在同一路段上添加车道限行
 
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
@@ -182,25 +171,22 @@ class MySimulator(QObject, PyCustomerSimulator):
         module_x = np.sqrt(np.dot(x, x))  # x的模长
         real_speed = data['origin_speed']
         sim_new_speed = min(max(real_speed + projection_scale * module_x / (smoothing_time / 1000), real_speed / 2),
-                            real_speed * 2, 25)
+                            real_speed * 2, network_min_speed)
 
-        veh_basic_info[veh.id()].update(
-            {
-                "speed": sim_new_speed,
-                "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
-                'sim': sim_position,
-                'real': real_positon,
-            }
-        )
-        veh_basic_info[veh.id()]['speeds'].append(real_speed)
+        veh.setJsonProperty('speed', sim_new_speed)
+        veh.setJsonProperty('init_time', simuiface.simuTimeIntervalWithAcceMutiples())
+        veh.setJsonProperty('sim', sim_position)
+        veh.setJsonProperty('real', real_positon)
+        veh.setJsonProperty('speeds', json_info.get('speeds', []) + [real_speed])
 
-        if abs(projection_scale * module_x) > buffer_length:
-            veh_basic_info[veh.id()]['delete'] = True
+        # # 不再主动删除车辆
+        # if abs(projection_scale * module_x) > buffer_length:
+        #     veh_basic_info[veh.id()]['delete'] = True
 
     # 过载的父类方法，TESS NG 在每个计算周期结束后调用此方法，大量用户逻辑在此实现，注意耗时大的计算要尽可能优化，否则影响运行效率
     def afterOneStep(self):
-        logging.info(f"start_afterOneStep: {time.time()}")
-        global veh_basic_info, new_cars
+        logger.info(f"start_afterOneStep: {time.time()}")
+        global new_cars
 
         my_process = sys.modules["__main__"].__dict__['myprocess']
 
@@ -217,38 +203,26 @@ class MySimulator(QObject, PyCustomerSimulator):
         lAllVehi = simuiface.allVehicle()
 
         # 当前正在运行车辆列表
-        # TODO 实时获取仿真车辆信息,发送至队列
         vehs_data, link_veh_mapping = get_vehi_info(simuiface)
-        # print([for obj in data[0]['objs']])
-
-
         send_queue = my_process.send_queue
         try:
             send_queue.put_nowait(vehs_data)
         except:
-            logging.warning('send_queue is full')
+            logger.warning('send_queue is full')
 
         timestamp = time.time()
         # 每n秒执行一次
         if timestamp - my_process.origin_data['timestamp'] < after_one_step_interval:
             return
 
-        # # 更新 link_veh_mapping 表
-        # if random.randint(0, 100) == 0:
-        #     veh_ids = {veh.id(): True for veh in lAllVehi}
-        #     for key in list(plat_match_mapping.keys()):
-        #         if not veh_ids.get(key):
-        #             del plat_match_mapping[key]
-        #     logging.info(f'plat_match_mapping: {len(plat_match_mapping)}, {plat_match_mapping}')
-
-        logging.info(f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+        logger.info(f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         try:
             origin_cars = my_process.origin_data['data']
             my_process.origin_data['data'] = {}
             my_process.origin_data['timestamp'] = timestamp
         except:
             error = str(traceback.format_exc())
-            logging.error(f'origin_data get error: {error}')
+            logger.error(f'origin_data get error: {error}')
             return
 
         # 原始数据需要调整, plat 必定存在,所以初始化的车牌必定存在，且作为标准值
@@ -276,8 +250,6 @@ class MySimulator(QObject, PyCustomerSimulator):
                     'plat': json_info['plat'],
                     'car_type': json_info['car_type'],
                     'position_id': json_info['position_id'],
-                    # 'name': veh.name(),
-                    # 'json_info': json_info
                 }
             )
 
@@ -307,24 +279,21 @@ class MySimulator(QObject, PyCustomerSimulator):
                     # 创建和移除时都会更新字典，时刻保证 radarToTess 与 路网车辆的唯一映射
                     self.setStepsPerCall(veh)
                     # 设置属性
-                    data.update(plats=[plat])
-                    veh.setJsonInfo(data)
-
-                    create_car_count += 1
-                    veh_basic_info[veh.id()].update(
+                    data.update(
                         {
                             "speed": data['origin_speed'],  # TODO 暂时取消1.5倍的加速
                             "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
                             'sim': [data['x'], data['y']],
                             'real': [data['x'], data['y']],
+                            'plats': [plat],
+                            'speeds': [data['origin_speed']],
                         }
                     )
-                    veh_basic_info[veh.id()]['speeds'].append(data['origin_speed'])
-                    # 添加车牌映射表
-                    # plat_match_mapping[veh.id()].add(plat)
+                    veh.setJsonInfo(data)
+                    create_car_count += 1
                     link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
 
-        logging.info(f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+        logger.info(f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         return
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
@@ -368,19 +337,18 @@ class MySimulator(QObject, PyCustomerSimulator):
             veh = simuiface.createGVehicle(dvp)
             return veh
 
-    def afterStopVehicle(self, veh):
-        if veh.id() in veh_basic_info.keys():
-            del veh_basic_info[veh.id()]
-
-        # 不需要移除，以为下一个afteronstep会被置空
-        # global new_cars
-        # plat = json.loads(veh.name())['plat']
-        # if plat in new_cars.keys():
-        #     del new_cars[plat]
-        return True
+    # def afterStopVehicle(self, veh):
+    #     if veh.id() in veh_basic_info.keys():
+    #         del veh_basic_info[veh.id()]
+    #
+    #     # 不需要移除，以为下一个afteronstep会被置空
+    #     # global new_cars
+    #     # plat = json.loads(veh.name())['plat']
+    #     # if plat in new_cars.keys():
+    #     #     del new_cars[plat]
+    #     return True
 
     # def isStopDriving(self, veh):  # 被标记清除的车辆，重新创建
     #    if veh_basic_info[veh.id()]['delete']:
     #        return True
     #    return False
-

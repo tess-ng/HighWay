@@ -23,7 +23,7 @@ def findNewPos(data, create=False):
     LD_link_mapping = LD_create_link_mapping if create else LD_run_link_mapping
 
     currentX, currentY, position_id = data['x'], data['y'], data['position_id']
-    disInNet, disInRoad = None, None
+    disInRoad = None
     currentPos = Point(currentX, currentY)
     minDis, newRoadId, newLaneId = 20, -1, -1  # 最佳匹配点相关属性（距离、路段ID、车道ID）
     for roadId, lanes in centerPoint_table.items():  # 遍历所有road进行路段/连接器匹配

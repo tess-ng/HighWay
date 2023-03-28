@@ -43,7 +43,7 @@ LD_run_link_mapping = {"YP22": [11, 12, 13, 14, 15, 39], "YP2": [6, 7, 41], "YP1
                        "YP7": [8, 9, 40, 21, 22, 23, 24, 25, 44, 10], "YP24": [31, 32, 39],
                        "YP20": [4, 5, 34, 37, 17, 18, 19, 20, 43]}
 
-# 对雷达进行分组，同一组内的才会寻找相似车辆
+# 对雷达进行分组，同一组内的才会寻找相似车辆 TODO 应当把非创建车辆的雷达也放进来
 LD_groups = [["YP22", "YP24"], ["YP2", "YP1"], ["YP5"], ["YP7"], ["YP20"]]
 LD_group_mapping = {LD: {"group": group, "index": index} for index, group in enumerate(LD_groups) for LD in group}
 
@@ -53,6 +53,9 @@ diff_attributes = ['position_id']
 
 # 创建车辆时，前后允许的最小空闲位置
 idle_length = 20
+
+# 全域车辆最大速度
+network_min_speed = 25
 
 # 缓冲区长度
 buffer_length = 300
@@ -87,7 +90,7 @@ after_one_step_interval = 1
 # 仿真倍速
 accemultiples = 1
 
-# 数据量上限
+# 数据量上限,即下载/上传时路网最大车辆数
 max_size = 2500
 
 # 项目目录
@@ -96,7 +99,9 @@ BASEPATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 路网文件位置
 TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "yp_split.tess")
 
+# 日志文件位置
 LOG_FILE_DIR = os.path.join(BASEPATH, 'Log')
+log_name = "tessng"
 
 # 杨浦大桥经纬度映射关系
 p = Proj('+proj=tmerc +lon_0=121.53170529669137 +lat_0=31.26772995795071 +ellps=WGS84')

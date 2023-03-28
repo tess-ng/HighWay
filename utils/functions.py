@@ -66,7 +66,7 @@ def find_close_object(filter_cars, filter_vehs, threshold):
 
     similar_combination_list, surplus_cars = [], list(filter_cars.keys())
     for plat, veh_infos in neighbor_relationship.items():
-        # car_type = int(float(filter_cars[plat]['car_type'] or 13))
+        car_type = int(float(filter_cars[plat]['car_type'] or 13))
         for veh_info in veh_infos:
             # 车型和车牌匹配成功，返回
             # if veh.vehicleTypeCode() == tessng_car_type and is_same(plat, veh.name(), 1):
@@ -83,7 +83,8 @@ def find_neighbor_points(points, background_points, threshold, match_attributes=
     :param points: 观测点
     :param background_points: 背景点序列
     :param threshold: 距离 X
-    :param other_attributes: 必须确保属性相同
+    :param match_attributes: 当属性都存在时，必须确保属性值相同
+    :param diff_attributes: 当属性都存在时，必须确保属性值不同
     :return:
     """
     point_class = collections.defaultdict(list)
@@ -192,7 +193,6 @@ def get_vehi_info(simuiface):
             except:
                 error = str(traceback.format_exc())
                 logging.error(f"lane_convert error: {error}")
-                # print("lane_convert error:", error)
                 continue
 
             origin_data.update(
@@ -216,9 +216,7 @@ def get_vehi_info(simuiface):
 
 def lane_convert(veh):  # tess车道编号从0开始
     if veh.roadIsLink():
-        #print(veh.road().id(), veh.lane().number())
         return laneId_mapping[veh.road().id()][veh.lane().number()]
     else:
-        #print(veh.road().fromLink().id(), veh.lane().number())
         return laneId_mapping[veh.road().fromLink().id()][veh.lane().number()]
 
