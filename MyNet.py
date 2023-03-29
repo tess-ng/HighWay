@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
+from Tessng import PyCustomerNet, tngPlugin, tessngIFace
 
-from Tessng import PyCustomerNet, tngPlugin, tessngIFace, m2p, p2m
-from VehicleMatch.utils import *
-from VehicleMatch.vehMatch import findNewPos
-
-centerPoint_table = dict()  # 地图中所有可行路径的点集合，key为LinkID/ConnectorID，vals为对应点集合——列表最后一个元素为tuple（当前路段长度，当前路段对应总里程)
-netTopo_table = dict()  # 地图中路段与连接器的拓朴关系
 
 # 用户插件子类，代表用户自定义与路网相关的实现逻辑，继承自MyCustomerNet
+from utils.config import network_grid_size
+
+
 class MyNet(PyCustomerNet):
     def __init__(self):
         super(MyNet, self).__init__()
@@ -28,7 +26,7 @@ class MyNet(PyCustomerNet):
         netiface = iface.netInterface()
         # netiface.setSceneSize(3000, 3000)
         # 初始网格化
-        netiface.buildNetGrid(5)
+        netiface.buildNetGrid(network_grid_size)
 
 
         #

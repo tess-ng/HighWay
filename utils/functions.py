@@ -1,7 +1,5 @@
 # 对所有车辆从车牌，位置间进行匹配，为每两车匹配一个仿真车辆,重新生成所有的轨迹数据
-
 import traceback
-import json
 import time
 import logging
 import collections
@@ -13,8 +11,9 @@ from utils.config import neighbor_distance, laneId_mapping, match_attributes, di
 
 
 def diff_cars(veh_infos, origin_cars):
+    # 有可能在时刻1，B车被赋予A，在时刻2，B车被赋予C，暂时无法解决
+    # 因为如果做强匹配，有可能导致在时刻1，B车被赋予A，在时刻2，B车A同时出现按
     # adjust_cars = {car['plat']: car for car in cars}
-
     combination_list = []  # 匹配成功
     filter_vehs = []
     for veh_info in veh_infos:
@@ -161,6 +160,9 @@ def get_vehi_info(simuiface):
             "objs": []
         }
     ]
+    link_veh_mapping = collections.defaultdict(list)
+    # return data, link_veh_mapping
+
     lAllVehi = simuiface.allVehicle()
     VehisStatus = simuiface.getVehisStatus() # 所有正在运行的车辆
 
@@ -168,7 +170,6 @@ def get_vehi_info(simuiface):
         i.vehiId: i
         for i in VehisStatus
     }
-    link_veh_mapping = collections.defaultdict(list)
 
     def get_attr(obj, attr):
         try:
@@ -206,7 +207,7 @@ def get_vehi_info(simuiface):
                     'lane_id': vehi.roadId(),
                     'is_link': vehi.roadIsLink(),
                     'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
-                    'plats': vehi.jsonInfo()['plats'],
+                    # 'plats': vehi.jsonInfo()['plats'],
                 }
             )
             data[0]['objs'].append(origin_data)

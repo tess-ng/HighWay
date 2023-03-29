@@ -1,25 +1,22 @@
-import json
-import random
 import sys
-import collections
 import time
 import traceback
-import logging
+import numpy as np
 
+from math import cos, sin, pi
 from random import choice
 from PySide2.QtCore import *
 from Tessng import *
-from utils.config import buffer_length, smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
+from VehicleMatch.geoCalculation import Vector, Point
+from utils.config import smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
     after_step_interval, after_one_step_interval, reference_time, idle_length, change_lane_period, LD_groups, \
-    LD_group_mapping, network_min_speed, log_name
+    LD_group_mapping, network_max_speed, LD_create_link_mapping, log_name
 from utils.functions import diff_cars, get_vehi_info
-from VehicleMatch.vehMatch import *
+import logging
 
 
 logger = logging.getLogger(log_name)
 new_cars = {}
-
-
 # 用户插件子类，代表用户自定义与仿真相关的实现逻辑，继承自PyCustomerSimulator
 #     多重继承中的父类QObject，在此目的是要能够自定义信号signlRunInfo
 class MySimulator(QObject, PyCustomerSimulator):
@@ -107,11 +104,18 @@ class MySimulator(QObject, PyCustomerSimulator):
 
         # 在约定周期内，进行速度较准
         # 超出设定期限后(smoothing_time)重设期望速度  一旦进入仿真，重置期望速度至平均速度
+        # if json_info['speed'] is not None and json_info['init_time'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
+        #         json_info['init_time'] < smoothing_time:
+        #     ref_inOutSpeed.value = m2p(json_info['speed'])
+        # # 否则采用多段平均速度作为期望速度
+        # elif json_info['speeds'] is not None and json_info['init_time'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
+        #         json_info['init_time'] < reference_time:
+        #     ref_inOutSpeed.value = m2p(np.mean(json_info['speeds'][-3:]))
         if json_info['init_time'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
                 json_info['init_time'] < smoothing_time:
             ref_inOutSpeed.value = m2p(json_info['speed'])
         # 否则采用多段平均速度作为期望速度
-        elif json_info['speeds'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
+        elif json_info['init_time'] and simuiface.simuTimeIntervalWithAcceMutiples() - \
                 json_info['init_time'] < reference_time:
             ref_inOutSpeed.value = m2p(np.mean(json_info['speeds'][-3:]))
         return True
@@ -123,6 +127,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         netiface = iface.netInterface()
 
         json_info = veh.jsonInfo()
+
         plat = json_info['plat']
         data = new_cars.get(plat)
 
@@ -136,11 +141,24 @@ class MySimulator(QObject, PyCustomerSimulator):
         if data['plat'] not in json_info['plats']:
             veh.setJsonProperty('plats', json_info['plats'] + [data['plat']])
 
-        # position_car = findNewPos(data)
-        # if not (position_car and position_car[3] == "L"):  # 只能在Link上重置 TODO 如果不是在路段上，设定期望路径
-        #     return
         # TODO 调整为 网格化的移动
-        netiface.locateOnCrid(QPointF(data['x']))
+        position_id = json_info['position_id']
+        locations = netiface.locateOnCrid(QPointF(m2p(data['x']), m2p(data['y'])))
+        # 不同雷达只能被允许在部分路段行驶
+        # locations = [location for location in locations if location.isLane() and location.castToLane().link().id() in LD_group_mapping[position_id]['run_links']]
+        # if not locations:
+        #     return
+        location = None
+        for demo_location in locations:
+            if demo_location.pLaneObject.isLane():
+                lane_id = demo_location.pLaneObject.castToLane().id()
+                link = netiface.findLane(lane_id).link()
+                if link.id() in LD_create_link_mapping[position_id]:
+                    location = demo_location
+                    break
+        # locations = [location for location in locations if location.pLaneObject.isLane() and location.pLaneObject.castToLane().link().id() in LD_create_link_mapping[position_id]]
+        if not location:
+            return
 
         # link = netiface.findLink(position_car[0])
         # veh_basic_info[veh.id()]['road_id'] = position_car[0]
@@ -156,12 +174,12 @@ class MySimulator(QObject, PyCustomerSimulator):
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
         # 在路段的起终位置进行映射，其他位置仿真
-        ans = position_car[4]
-        real_positon = [ans.x, ans.y]
+        real_positon = [data['x'], data['y']]
         sim_position = [p2m(veh.pos().x()), p2m(veh.pos().y())]
 
         # 计算车辆位置差异与前进方向的余弦值
-        driving_direction_vector = position_car[5]  # 行进方向
+        angle = (veh.angle() - 90) / 180 * pi
+        driving_direction_vector = Vector(Point(0, 0), Point(cos(angle), sin(angle)))  # 行进方向  车头的朝向
         real_sim_diff_vector = Vector(Point(*sim_position), Point(*real_positon))  # 仿真向真实趋近
         x = np.array([driving_direction_vector.x, driving_direction_vector.y])  # 仿真车辆所在车道点中心线的向量
         y = np.array([real_sim_diff_vector.x, real_sim_diff_vector.y])  # 真实位置与仿真位置对比向量
@@ -170,9 +188,10 @@ class MySimulator(QObject, PyCustomerSimulator):
         projection_scale = np.dot(x, y) / np.dot(x, x)  # 投影比例
         module_x = np.sqrt(np.dot(x, x))  # x的模长
         real_speed = data['origin_speed']
-        sim_new_speed = min(max(real_speed + projection_scale * module_x / (smoothing_time / 1000), real_speed / 2),
-                            real_speed * 2, network_min_speed)
+        sim_new_speed = min(max(real_speed + (projection_scale * module_x).tolist() / (smoothing_time / 1000), real_speed / 2),
+                            real_speed * 2, network_max_speed)
 
+        # print(sim_position, veh.angle(), angle, x, y, driving_direction_vector, sim_position, real_positon, sim_new_speed, real_speed, projection_scale)
         veh.setJsonProperty('speed', sim_new_speed)
         veh.setJsonProperty('init_time', simuiface.simuTimeIntervalWithAcceMutiples())
         veh.setJsonProperty('sim', sim_position)
@@ -242,12 +261,14 @@ class MySimulator(QObject, PyCustomerSimulator):
         veh_groups = [[]] * len(LD_groups)
         for veh in lAllVehi:  # 已经驶离路网的仍需要被记录，否则可能在末端位置重复创建
             json_info = veh.jsonInfo()
+
             position_id = json_info['position_id']
             veh_groups[LD_group_mapping[position_id]['index']].append(
                 {
                     'x': p2m(veh.pos().x()),
                     'y': p2m(veh.pos().y()),
                     'plat': json_info['plat'],
+                    'plats': json_info['plats'],
                     'car_type': json_info['car_type'],
                     'position_id': json_info['position_id'],
                 }
@@ -270,7 +291,7 @@ class MySimulator(QObject, PyCustomerSimulator):
             for plat in surplus_cars:
                 data = new_cars[plat]
                 # 只对部分雷达进行发车逻辑
-                if data['position_id'] not in LD_run_link_mapping.keys():
+                if data['position_id'] not in LD_create_link_mapping.keys():
                     continue
 
                 veh = self.create_car(netiface, simuiface, data, link_veh_mapping)
@@ -281,6 +302,7 @@ class MySimulator(QObject, PyCustomerSimulator):
                     # 设置属性
                     data.update(
                         {
+                            # "speed": data['origin_speed'],  # TODO 暂时取消1.5倍的加速
                             "speed": data['origin_speed'],  # TODO 暂时取消1.5倍的加速
                             "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
                             'sim': [data['x'], data['y']],
@@ -289,6 +311,8 @@ class MySimulator(QObject, PyCustomerSimulator):
                             'speeds': [data['origin_speed']],
                         }
                     )
+                    # for k, v in data.items():
+                    #     veh.setJsonProperty(k, v)
                     veh.setJsonInfo(data)
                     create_car_count += 1
                     link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
@@ -298,44 +322,55 @@ class MySimulator(QObject, PyCustomerSimulator):
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
         link_veh_mapping = link_veh_mapping or {}
-        position_car = findNewPos(data, create=True)
-        if position_car and position_car[3] == 'L':  # 只做路段发车
-            # TODO 判断车辆最近点距离，距离过小时不进行创建,需要取消此逻辑
-            link = netiface.findLink(position_car[0])
-            disInRoad = position_car[2]
-            user_lanes = []
-            for lane in link.lanes():
-                find = True
-                for distance in link_veh_mapping.get(lane.id(), []):  # disInRoad
-                    if abs(distance - disInRoad) < idle_length:
-                        find = False
-                        break
-                if find:
-                    user_lanes.append(lane)
-            if not user_lanes:
-                user_lanes = link.lanes()
-                disInRoad = 0
-                # return
+        # position_car = findNewPos(data, create=True)
+        position_id = data['position_id']
+        locations = netiface.locateOnCrid(QPointF(m2p(data['x']), m2p(data['y'])))
+        # 不同雷达只能被允许在部分路段创建
+        location, link = None, None
+        for demo_location in locations:
+            if demo_location.pLaneObject.isLane():
+                lane_id = demo_location.pLaneObject.castToLane().id()
+                link = netiface.findLane(lane_id).link()
+                if link.id() in LD_create_link_mapping[position_id]:
+                    location = demo_location
+                    break
+        # locations = [location for location in locations if location.pLaneObject.isLane() and location.pLaneObject.castToLane().link().id() in LD_create_link_mapping[position_id]]
+        if not (location and link):
+            return
+        # location = locations[0]
+        # TODO 判断车辆最近点距离，距离过小时不进行创建,需要取消此逻辑
+        disInRoad = location.distToStart
+        user_lanes = []
+        for lane in link.lanes():
+            find = True
+            for distance in link_veh_mapping.get(lane.id(), []):  # disInRoad
+                if abs(distance - disInRoad) < idle_length:
+                    find = False
+                    break
+            if find:
+                user_lanes.append(lane)
+        if not user_lanes:
+            return
 
-            dvp = Online.DynaVehiParam()
-            # TODO 车型，颜色
-            dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data['car_type'] or 1)), 13)
-            dvp.roadId = position_car[0]
+        dvp = Online.DynaVehiParam()
+        # TODO 车型，颜色
+        dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data['car_type'] or 1)), 13)
+        dvp.roadId = link.id()
 
-            # 重设 lane_number
-            # lane_id = data.get('lane_id') or 1
-            # link = netiface.findLink(position_car[0])
-            # lane_count = len(link.lanes())
-            # lane_id = max(min(lane_id, lane_count), 1)  # 从 0 开始 输出我就不知道
-            # lane_number = max(lane_count - lane_id, 0)
-            
-            dvp.laneNumber = choice(user_lanes).number()  # lane_number
-            dvp.dist = disInRoad
-            dvp.speed = data['origin_speed']
-            # other_json = json.dumps(data)
-            dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
-            veh = simuiface.createGVehicle(dvp)
-            return veh
+        # 重设 lane_number
+        # lane_id = data.get('lane_id') or 1
+        # link = netiface.findLink(position_car[0])
+        # lane_count = len(link.lanes())
+        # lane_id = max(min(lane_id, lane_count), 1)  # 从 0 开始 输出我就不知道
+        # lane_number = max(lane_count - lane_id, 0)
+
+        dvp.laneNumber = choice(user_lanes).number()  # lane_number
+        dvp.dist = disInRoad
+        dvp.speed = data['origin_speed']
+        # other_json = json.dumps(data)
+        dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
+        veh = simuiface.createGVehicle(dvp)
+        return veh
 
     # def afterStopVehicle(self, veh):
     #     if veh.id() in veh_basic_info.keys():

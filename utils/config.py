@@ -39,13 +39,31 @@ car_veh_type_name_mapping = {
 LD_create_link_mapping = {"YP22": [11, 12], "YP2": [6], "YP1": [6], "YP5": [26, 27], "YP7": [8], "YP20": [3, 45],
                           "YP24": [31]}
 # 雷达映射后可能行驶的路段
-LD_run_link_mapping = {"YP22": [11, 12, 13, 14, 15, 39], "YP2": [6, 7, 41], "YP1": [6, 7, 41], "YP5": [26, 27, 28, 29],
+LD_create_run_link_mapping = {"YP22": [11, 12, 13, 14, 15, 39], "YP2": [6, 7, 41], "YP1": [6, 7, 41], "YP5": [26, 27, 28, 29],
                        "YP7": [8, 9, 40, 21, 22, 23, 24, 25, 44, 10], "YP24": [31, 32, 39],
                        "YP20": [4, 5, 34, 37, 17, 18, 19, 20, 43]}
 
 # 对雷达进行分组，同一组内的才会寻找相似车辆 TODO 应当把非创建车辆的雷达也放进来
 LD_groups = [["YP22", "YP24"], ["YP2", "YP1"], ["YP5"], ["YP7"], ["YP20"]]
-LD_group_mapping = {LD: {"group": group, "index": index} for index, group in enumerate(LD_groups) for LD in group}
+
+LD_group_mapping = {}
+for index, group in enumerate(LD_groups):
+    for position_id in group:
+        run_links = []
+        for _ in group:
+            run_links += LD_create_run_link_mapping.get(_, [])
+
+        # 每批次的雷达分一组
+        LD_group_mapping[position_id] = {"group": group, "index": index, 'run_links': set(run_links)}
+
+
+# LD_group_mapping = {LD: {"group": group, "index": index, ''} for index, group in enumerate(LD_groups) for LD in group}
+# LD_run_link_mapping = {position_id: set(links) for position_id, links in LD_run_link_mapping.items()}
+
+
+# LD_run_link_mapping = {}
+# # 全域雷达的雷达轨迹，允许被映射的路段
+
 
 # 车辆需要对比的其他属性
 match_attributes = ['car_type']
@@ -55,7 +73,7 @@ diff_attributes = ['position_id']
 idle_length = 20
 
 # 全域车辆最大速度
-network_min_speed = 25
+network_max_speed = 25
 
 # 缓冲区长度
 buffer_length = 300
@@ -105,6 +123,9 @@ log_name = "tessng"
 
 # 杨浦大桥经纬度映射关系
 p = Proj('+proj=tmerc +lon_0=121.53170529669137 +lat_0=31.26772995795071 +ellps=WGS84')
+
+# 路网网格化尺寸
+network_grid_size = 5
 
 # 车道转换函数
 laneId_mapping_old = {1: {0: 3, 1: 2, 2: 1}, 2: {0: 3, 1: 2, 2: 1}, 3: {0: 3, 1: 2, 2: 1}, 4: {0: 3, 1: 2, 2: 1},

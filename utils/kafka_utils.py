@@ -1,4 +1,5 @@
 import json
+import logging
 import multiprocessing
 import random
 import time
@@ -7,15 +8,16 @@ import traceback
 from kafka import KafkaProducer, KafkaConsumer
 from multiprocessing import Process
 from multiprocessing import Queue
-
-# ConsumerRecord.value
 from utils.config import max_size, p, LD_group_mapping, log_name
-import logging
 
 
-logger = logging.getLogger(log_name)
+# logger = logging.getLogger(log_name)
+from utils.log import setup_log
+
+
 class Producer:
-    def __init__(self, host, port, topic):
+    def __init__(self, logger, host, port, topic):
+        self.logger = logger
         self.topic = topic
         self.producer = KafkaProducer(bootstrap_servers=[f'{host}:{port}'], api_version=(0, 10),
                                       max_request_size=20 * 1024 * 1024)
@@ -23,10 +25,12 @@ class Producer:
     def send(self, value):  # key@value 采用同样的key可以保证消息的顺序
         #print([[i['origin_speed'], i['speed'], i['x']] for i in value[0]['objs']])
         #logging.info(value)
-        import random
-        if random.randint(0, 100) == 0:
-            with open('demo.log', 'a+') as file:
-                file.write(json.dumps(value) + "\n")
+        # import random
+        # if random.randint(0, 100) == 0:
+        #     with open('demo.log', 'a+') as file:
+        #         file.write(json.dumps(value) + "\n")
+        if random.randint(0, 1000) == 0:
+            self.logger.info('send ok')
         return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
@@ -38,7 +42,7 @@ class Producer:
 
     # 定义一个发送失败的回调函数
     def on_send_error(self, excp):
-        logger.warning(f"send error: {excp}")
+        self.logger.warning(f"send error: {excp}")
 
 
 class MyProcess:
@@ -64,9 +68,10 @@ class MyProcess:
 
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
+        logger = setup_log(f"{log_name}_kafka_send", when="D", interval=7, backupCount=2)
         while True:
             try:
-                producer = Producer(*args)
+                producer = Producer(logger, *args)
                 while True:
                     # 不断获取仿真轨迹发送至kafka
                     data = send_queue.get()
@@ -83,6 +88,7 @@ class MyProcess:
 
     # 用来读取kafka的雷达轨迹消息
     def take(self, host, port, topic, origin_data):
+        logger = setup_log(f"{log_name}_kafka_take", when="D", interval=7, backupCount=2)
         while True:
             try:
                 consumer = KafkaConsumer(
@@ -120,11 +126,11 @@ class MyProcess:
                             )
 
                             # TODO 对于超限车随机赋长宽高
-                            if random.randint(0, 100) == 0:
-                                if obj.get('vehType') == 5:
-                                    obj.update(objLength=1850, objWidth=275, objHeight=412)
-                                elif obj.get('vehType') == 9:
-                                    obj.update(objLength=1830, objWidth=281, objHeight=419)
+                            # if random.randint(0, 100) == 0:
+                            #     if obj.get('vehType') == 5:
+                            #         obj.update(objLength=1850, objWidth=275, objHeight=412)
+                            #     elif obj.get('vehType') == 9:
+                            #         obj.update(objLength=1830, objWidth=281, objHeight=419)
                             data[obj.get("vehPlateString")] = obj
 
                     # TODO 取数据时不对车辆进行雷达分组，仍然以最新的数据为准
