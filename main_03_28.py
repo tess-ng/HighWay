@@ -5,14 +5,14 @@ from PySide2.QtWidgets import *
 # 初始化kafka对象
 from Tessng import *
 
-from utils.config import TESSNG_FILE_PATH, log_name
+from utils.config import TESSNG_FILE_PATH, log_name, LOG_FILE_DIR
 from utils.kafka_utils import MyProcess
 from MyPlugin import *
 from utils.log import setup_log
 
 
 if __name__ == '__main__':
-    logger = setup_log(log_name, when='MIDNIGHT')
+    logger = setup_log(os.path.join(LOG_FILE_DIR, 'main'), log_name, when='MIDNIGHT')
 
     config_module = __import__('utils.config', fromlist=('config',))
     my_process = MyProcess(config_module)

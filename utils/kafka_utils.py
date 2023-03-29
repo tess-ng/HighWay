@@ -1,6 +1,7 @@
 import json
 import logging
 import multiprocessing
+import os
 import random
 import time
 import traceback
@@ -8,8 +9,7 @@ import traceback
 from kafka import KafkaProducer, KafkaConsumer
 from multiprocessing import Process
 from multiprocessing import Queue
-from utils.config import max_size, p, LD_group_mapping, log_name
-
+from utils.config import max_size, p, LD_group_mapping, log_name, LOG_FILE_DIR
 
 # logger = logging.getLogger(log_name)
 from utils.log import setup_log
@@ -29,8 +29,8 @@ class Producer:
         # if random.randint(0, 100) == 0:
         #     with open('demo.log', 'a+') as file:
         #         file.write(json.dumps(value) + "\n")
-        if random.randint(0, 1000) == 0:
-            self.logger.info('send ok')
+        # if random.randint(0, 1000) == 0:
+        #     self.logger.info('send ok')
         return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
@@ -68,7 +68,7 @@ class MyProcess:
 
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
-        logger = setup_log(f"{log_name}_kafka_send", when="D", interval=7, backupCount=2)
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'send'), log_name, when="D", interval=7, backupCount=2)
         while True:
             try:
                 producer = Producer(logger, *args)
@@ -88,7 +88,7 @@ class MyProcess:
 
     # 用来读取kafka的雷达轨迹消息
     def take(self, host, port, topic, origin_data):
-        logger = setup_log(f"{log_name}_kafka_take", when="D", interval=7, backupCount=2)
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'take'), log_name, when="D", interval=7, backupCount=2)
         while True:
             try:
                 consumer = KafkaConsumer(
