@@ -102,7 +102,6 @@ class MySimulator(QObject, PyCustomerSimulator):
         # vehi.setSteps_beforeNextRoad(1)
 
     def ref_reSetSpeed(self, veh, ref_inOutSpeed):
-        global veh_basic_info
         iface = tessngIFace()
         simuiface = iface.simuInterface()
         json_info = veh.jsonInfo()
@@ -164,16 +163,26 @@ class MySimulator(QObject, PyCustomerSimulator):
         if not location:
             return
 
-        link = netiface.findLink(position_car[0])
-        veh_basic_info[veh.id()]['road_id'] = position_car[0]
-        lane_id = data['lane_id']
-        if lane_id is not None:
-            lane_count = len(link.lanes())
-            lane_id = max(min(lane_id, lane_count), 1)  # 为什么用最左侧车道容易崩溃
-            lane_number = lane_count - lane_id
-            veh_basic_info[veh.id()]['lane_number'] = lane_number
-            limit_numbers = [_.number() for _ in link.lanes() if _.number() != lane_number]
-            veh_basic_info[veh.id()]['limit_numbers'] = limit_numbers  # 在同一路段上添加车道限行
+        # 在 部分雷达区域直接 移动（此逻辑暂时不启用）
+        if position_id in LD_create_link_mapping.keys():
+            veh.vehicleDriving().move(location.pLaneObject, location.distToStart)
+            veh.setJsonProperty('speed', data['origin_speed'])
+            veh.setJsonProperty('init_time', simuiface.simuTimeIntervalWithAcceMutiples())
+            veh.setJsonProperty('sim', [data['x'], data['y']])
+            veh.setJsonProperty('real', [data['x'], data['y']])
+            veh.setJsonProperty('speeds', json_info.get('speeds', []) + [data['origin_speed']])
+            return
+
+        # link = netiface.findLink(position_car[0])
+        # veh_basic_info[veh.id()]['road_id'] = position_car[0]
+        # lane_id = data['lane_id']
+        # if lane_id is not None:
+        #     lane_count = len(link.lanes())
+        #     lane_id = max(min(lane_id, lane_count), 1)
+        #     lane_number = lane_count - lane_id
+        #     veh_basic_info[veh.id()]['lane_number'] = lane_number
+        #     limit_numbers = [_.number() for _ in link.lanes() if _.number() != lane_number]
+        #     veh_basic_info[veh.id()]['limit_numbers'] = limit_numbers  # 在同一路段上添加车道限行
 
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
@@ -201,10 +210,6 @@ class MySimulator(QObject, PyCustomerSimulator):
         veh.setJsonProperty('sim', sim_position)
         veh.setJsonProperty('real', real_positon)
         veh.setJsonProperty('speeds', json_info.get('speeds', []) + [real_speed])
-
-        # # 不再主动删除车辆
-        # if abs(projection_scale * module_x) > buffer_length:
-        #     veh_basic_info[veh.id()]['delete'] = True
 
     # 过载的父类方法，TESS NG 在每个计算周期结束后调用此方法，大量用户逻辑在此实现，注意耗时大的计算要尽可能优化，否则影响运行效率
     def afterOneStep(self):
@@ -373,19 +378,3 @@ class MySimulator(QObject, PyCustomerSimulator):
         dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
         veh = simuiface.createGVehicle(dvp)
         return veh
-
-    # def afterStopVehicle(self, veh):
-    #     if veh.id() in veh_basic_info.keys():
-    #         del veh_basic_info[veh.id()]
-    #
-    #     # 不需要移除，以为下一个afteronstep会被置空
-    #     # global new_cars
-    #     # plat = json.loads(veh.name())['plat']
-    #     # if plat in new_cars.keys():
-    #     #     del new_cars[plat]
-    #     return True
-
-    # def isStopDriving(self, veh):  # 被标记清除的车辆，重新创建
-    #    if veh_basic_info[veh.id()]['delete']:
-    #        return True
-    #    return False
