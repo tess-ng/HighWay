@@ -1,29 +1,34 @@
 import copy
 import datetime
 import json
+import logging
 import multiprocessing
 import os.path
 import time
 import traceback
 
-from kafka import KafkaProducer, KafkaConsumer, TopicPartition
+from kafka import KafkaProducer, KafkaConsumer
 from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, WEB_PORT, p
+from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name
+from utils.log import setup_log
 from utils.scocket_model import WebSocketUtil
 from utils.functions import get_height_funs
 
 
+logger = logging.getLogger(log_name)
+
 class Producer:
-    def __init__(self, host, port, topic):
+    def __init__(self, logger, host, port, topic):
+        self.logger = logger
         self.topic = topic
         self.producer = KafkaProducer(bootstrap_servers=[f'{host}:{port}'], api_version=(0, 10),
                                       max_request_size=20 * 1024 * 1024)
 
     def send(self, value):  # key@value 采用同样的key可以保证消息的顺序
-        # return
+        return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
             self.on_send_error).get()
@@ -34,7 +39,7 @@ class Producer:
 
     # 定义一个发送失败的回调函数
     def on_send_error(self, excp):
-        print(f"send error: {excp}")
+        self.logger.warning(f"send error: {excp}")
 
 
 class MyProcess:
@@ -44,9 +49,8 @@ class MyProcess:
         return cls._instance
 
     def __init__(self, config):
-        # self.take_queue = Queue(maxsize=20)
         self.send_queue = Queue(maxsize=200)
-        self.websocket_queue = Queue(maxsize=1000)
+        self.websocket_queue = Queue(maxsize=200)
         self.origin_data = multiprocessing.Manager().dict()
         self.origin_data['data'] = {}
         self.origin_data['timestamp'] = time.time()
@@ -64,38 +68,32 @@ class MyProcess:
     def websocket_process(self, websocket_queue):
         height_funs = get_height_funs()
         # 子进程有一个websocket，用来与前端进行通信
+        web = WebSocketUtil(port=WEB_PORT)
+        web.start_socket_server()
+        users = web.users
         while True:
-            try:
-                web = WebSocketUtil(port=WEB_PORT)
-                web.start_socket_server()
-                users = web.users
-                while True:
-                    data = websocket_queue.get()
-                    print("websocket users:", len(users), len(data[0]["objs"]))
-                    if len(users):
-                        for obj in data[0]["objs"]:
-                            lon, lat = p(obj['x'], -obj['y'], inverse=True)
-                            obj.update(longitude=lon, latitude=lat, height=height_funs[obj['lane_number']](lon).tolist())
-
-                        send_users = copy.copy(users)
-                        for user in send_users:
-                            web.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
-            except:
-                error = str(traceback.format_exc())
-                print("websocket send error:", error)
+            data = websocket_queue.get()
+            logger.debug(f"websocket users: {len(users)}, data size {len(data[0]['objs'])}")
+            if len(users):
+                for obj in data[0]["objs"]:
+                    lon, lat = p(obj['x'], -obj['y'], inverse=True)
+                    obj.update(longitude=lon, latitude=lat, height=height_funs[obj['lane_number']](lon).tolist())
+                send_users = copy.copy(users)
+                for user in send_users:
+                    web.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
 
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
-        # producer 和 users 列表都在子进程初始化，不会影响主进程
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'send'), log_name, when="D", interval=7, backupCount=2)
         height_funs = get_height_funs()
         while True:
             try:
-                producer = Producer(*args)
+                producer = Producer(logger, *args)
                 while True:
                     # 不断获取仿真轨迹发送至kafka
                     data = send_queue.get()
                     if len(data[0]["objs"]) > max_size:
-                        print('kafka send size toor longer', len(data[0]["objs"]))
+                        logger.error(f'kafka send size too longer {len(data[0]["objs"])}')
                         return  # kill 进程，触发重启
 
                     for obj in data[0]["objs"]:
@@ -105,10 +103,11 @@ class MyProcess:
                     producer.send(data)
             except:
                 error = str(traceback.format_exc())
-                print("kafka send error:", error)
+                logger.error(f"kafka send error: {json.dumps(error)}")
 
     # 用来读取kafka的雷达轨迹消息
     def take(self, host, port, topic, origin_data):
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'take'), log_name, when="D", interval=7, backupCount=2)
         while True:
             try:
                 consumer = KafkaConsumer(
@@ -125,7 +124,27 @@ class MyProcess:
                         if obj.get("longitude") and obj.get("latitude") and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
                             x, y = p(obj['longitude'] / 10000000, obj['latitude'] / 10000000)
-                            obj.update(x=x, y=-y)
+                            # obj.update(x=x, y=-y, position_id=position_id)
+                            # obj.update(x=x, y=-y)
+
+                            obj.update(
+                                {
+                                    "x": x,
+                                    "y": -y,
+                                    'plat': obj['vehPlateString'],
+                                    'origin_angle': obj.get('angleGps') and obj.get('angleGps') / 10,
+                                    'origin_speed': obj.get('speed', 2000) / 100,
+                                    'car_type': obj.get('vehType'),
+                                    'lane_id': obj.get('laneId') or 1,
+                                }
+                            )
+
+                            # TODO 对于超限车随机赋长宽高
+                            # if random.randint(0, 100) == 0:
+                            #     if obj.get('vehType') == 5:
+                            #         obj.update(objLength=1850, objWidth=275, objHeight=412)
+                            #     elif obj.get('vehType') == 9:
+                            #         obj.update(objLength=1830, objWidth=281, objHeight=419)
                             data[obj.get("vehPlateString")] = obj
 
                     # 尽可能保证不加锁的状态下 数据不会重复取出
@@ -135,4 +154,4 @@ class MyProcess:
                         origin_data['data'] = temp_data
             except:
                 error = str(traceback.format_exc())
-                print("kafka take error:", json.dumps(error))
+                logger.error(f"kafka take error: {json.dumps(error)}")

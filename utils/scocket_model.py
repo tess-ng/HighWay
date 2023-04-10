@@ -1,13 +1,18 @@
-import copy
 import struct
-import json
 import socket
 import hashlib
 import base64
+import logging
+import time
+import traceback
 
 # 此功能用于与外界交互，可不使用
-import traceback
 from threading import Thread
+
+from utils.config import log_name
+
+logger = logging.getLogger(log_name)
+
 
 class WebSocketUtil(object):
     def __init__(self, port=8765, max_wait_user=5):
@@ -16,6 +21,7 @@ class WebSocketUtil(object):
         self.sock.bind(("0.0.0.0", port))
         self.sock.listen(max_wait_user)
         self.sock.setblocking(False)
+        self.sock.settimeout(0)
         self.users = set()
 
     def get_headers(self, data):
@@ -41,10 +47,12 @@ class WebSocketUtil(object):
         """
         try:
             conn, addr = self.sock.accept()
-        except BlockingIOError as err:
+        except BlockingIOError:
+            time.sleep(0.3)
             return
+        conn.settimeout(0)
         self.users.add(conn)
-        print('websocket add new user', conn, self.users)
+        logger.info(f'websocket add new user: {len(self.users)} {conn} {self.users}')
         # 获取握手消息，magic string ,sha1加密  发送给客户端  握手消息
         data = conn.recv(8096)
         headers = self.get_headers(data)
@@ -63,10 +71,6 @@ class WebSocketUtil(object):
         # 响应握手信息
         conn.send(bytes(response_str, encoding='utf-8'), )
 
-        # # 新的连接成功立马发一次数据
-        data = {"message": "connect done"}
-        self.send_msg(conn, bytes(json.dumps(data), encoding="utf-8"))
-
     # 向客户端发送数据
     def send_msg(self, conn, msg_bytes):
         """
@@ -77,7 +81,6 @@ class WebSocketUtil(object):
         """
         token = b"\x81"  # 接收的第一字节，一般都是x81不变
         length = len(msg_bytes)
-        # print(length)
         if length < 126:
             token += struct.pack("B", length)
         elif length <= 0xFFFF:
@@ -88,10 +91,15 @@ class WebSocketUtil(object):
         # 如果出错就是客户端断开连接
         try:
             conn.send(msg)
-        except Exception as e:
+            logger.debug("websocket users end conn")
+        except BlockingIOError:
+            pass
+        except:
             # 删除断开连接的记录
-            print('websocket delete user', self.users, e)
+            error = str(traceback.format_exc())
+            logger.warning(f'websocket users delete user: {self.users} {error}')
             self.users.remove(conn)
+            conn.close()
 
     def wait_socket_connect(self):
         """
@@ -102,7 +110,7 @@ class WebSocketUtil(object):
                 self.socket_connect()
             except:
                 error = str(traceback.format_exc())
-                print("socket_connect error:", error)
+                logger.error(f"socket_connect error: {error}")
 
     def start_socket_server(self):
         """
@@ -110,13 +118,3 @@ class WebSocketUtil(object):
         """
         # 启线程循环等待客户端建立连接
         Thread(target=self.wait_socket_connect).start()
-        # # 消息推送
-        # while True:
-        #     # 判断是否有客户端连接，有才推送消息
-        #     if len(users):
-        #         send_users = copy.copy(users)
-        #         # 自定义的消息内容
-        #         data = summary()
-        #         # 遍历
-        #         for user in send_users:
-        #             self.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
