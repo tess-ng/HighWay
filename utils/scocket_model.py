@@ -51,7 +51,7 @@ class WebSocketUtil(object):
             time.sleep(0.3)
             return
         conn.settimeout(0)
-        self.users.add(conn)
+
         logger.info(f'websocket add new user: {len(self.users)} {conn} {self.users}')
         # 获取握手消息，magic string ,sha1加密  发送给客户端  握手消息
         data = conn.recv(8096)
@@ -69,7 +69,8 @@ class WebSocketUtil(object):
         response_str = response_tpl % (ac.decode('utf-8'), headers['Host'], headers['url'])
 
         # 响应握手信息
-        conn.send(bytes(response_str, encoding='utf-8'), )
+        conn.sendall(bytes(response_str, encoding='utf-8'), )
+        self.users.add(conn)
 
     # 向客户端发送数据
     def send_msg(self, conn, msg_bytes):
@@ -90,7 +91,7 @@ class WebSocketUtil(object):
         msg = token + msg_bytes
         # 如果出错就是客户端断开连接
         try:
-            conn.send(msg)
+            conn.sendall(msg)
             logger.debug("websocket users end conn")
         except BlockingIOError:
             pass

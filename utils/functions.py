@@ -1,18 +1,53 @@
+# -*- coding: utf-8 -*-
+
 # 对所有车辆从车牌，位置间进行匹配，为每两车匹配一个仿真车辆,重新生成所有的轨迹数据
 import json
+import os
 import time
 import difflib
 import logging
 import collections
+from functools import lru_cache
+
 import numpy as np
 
 from Tessng import *
 from scipy.interpolate import interp1d
 
-from utils.config import neighbor_distance, match_attributes, diff_attributes, CENTER_POINT_PATH, log_name
+from utils.config import neighbor_distance, match_attributes, diff_attributes, log_name, CENTER_POINT_PATH, p
 
 logger = logging.getLogger(log_name)
 
+
+def get_funs(height_funs, point_mapping, p, file_name):
+    demo_x_list = []
+    for key in point_mapping:
+        points = point_mapping[key]
+        points = [i for i in points if 'longitude' in i.keys() and 'latitude' in i.keys()]
+        xy_list = [p(i['longitude'], i['latitude']) for i in points]
+        x_list = [i[0] for i in xy_list]
+        y_list = [i[1] for i in xy_list]
+        z_list = [i['z'] for i in points]
+        demo_x_list += x_list
+        f_y = interp1d(x_list, y_list, kind='linear', fill_value="extrapolate")
+        f_z = interp1d(x_list, z_list, kind='linear', fill_value="extrapolate")
+        height_funs[file_name][key] = {
+            'f_z': f_z,
+            'f_y': f_y,
+        }
+    return height_funs, demo_x_list
+
+height_funs = collections.defaultdict(dict)
+for file_name in os.listdir(CENTER_POINT_PATH):
+    data = json.load(open(os.path.join(CENTER_POINT_PATH, file_name), 'r'))
+    # 去除错误数据,保证每个路段的每个车道均有值
+    for key in data:
+        points = data[key]
+        points = [i for i in points if 'longitude' in i.keys() and 'latitude' in i.keys()]
+        data[key] = points
+    if not all(data.values()):
+        continue
+    get_funs(height_funs, data, p, file_name)
 
 def diff_cars(veh_infos, origin_cars):
     # 有可能在时刻1，B车被赋予A，在时刻2，B车被赋予C，暂时无法解决
@@ -67,7 +102,6 @@ def is_same2(s, j):
 
 def find_close_object(filter_cars, filter_vehs, threshold):
     # 根据车牌，位置，车型等内容为真实车辆匹配仿真车辆
-    start_time = time.time()
     points = filter_cars.values()
     neighbor_relationship = find_neighbor_points(points, filter_vehs, threshold, match_attributes=match_attributes,
                                                  diff_attributes=diff_attributes)
@@ -152,6 +186,26 @@ def find_neighbor_points(points, background_points, threshold, match_attributes=
     return neighbor_relationship
 
 
+# 通过车道ID获取高程函数
+@lru_cache(maxsize=None)
+def veh_fun_z(lane_id):
+    iface = tessngIFace()
+    netiface = iface.netInterface()
+    lane = netiface.findLane(lane_id)
+    road_name = lane.link().name()
+    lane_number = lane.number()
+    keys = road_name.split(',')  # 文件名,第一车道名,第二车道名等
+    fun = height_funs[keys[0]][keys[lane_number + 1]]['f_z']
+    return fun
+
+# def veh_fun_z(veh):
+#     lane = veh.lane()
+#     road_name = lane.link().number()
+#     lane_number = lane.number()
+#     keys = road_name.split(',')
+#     fun = height_funs[keys[0]][keys[lane_number + 1]]['f_z']
+#     return fun
+
 def get_vehi_info(simuiface):
     """
         汽车数据转换
@@ -170,7 +224,6 @@ def get_vehi_info(simuiface):
         }
     ]
     link_veh_mapping = collections.defaultdict(list)
-    # return data, link_veh_mapping
 
     lAllVehi = simuiface.allVehicle()
     VehisStatus = simuiface.getVehisStatus()
@@ -194,16 +247,18 @@ def get_vehi_info(simuiface):
 
     for vehi in lAllVehi:
         vehiStatus = VehisStatus_mapping.get(vehi.id())
-        if vehiStatus:
+        lane = vehi.lane()
+        if vehiStatus and lane:  # 确保车辆在路网上
             origin_data = vehi.jsonInfo()
             mPoint = get_attr(vehiStatus, 'mPoint')
             origin_data.update(
                 {
                     'x': p2m(mPoint.x()),
                     'y': p2m(mPoint.y()),
+                    'height': veh_fun_z(lane.id())(p2m(mPoint.x())).tolist(),
                     "angleGps": int(get_attr(vehi, 'angle') * 10),
                     "sim_speed": p2m(get_attr(vehi, 'currSpeed')),
-                    'lane_number': vehi.lane().number(),
+                    'lane_number': lane.number(),
                     'lane_id': vehi.roadId(),
                     'is_link': vehi.roadIsLink(),
                     'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
@@ -211,23 +266,26 @@ def get_vehi_info(simuiface):
                 }
             )
             data[0]['objs'].append(origin_data)
-            if vehi.roadIsLink():  # 只记录路段上的车辆，laneId 是唯一的
-                link_veh_mapping[vehi.laneId()].append(vehi.vehicleDriving().currDistanceInRoad())
+
+        # 允许车辆不在路网上
+        if vehi.roadIsLink():  # 只记录路段上的车辆，laneId 是唯一的
+            link_veh_mapping[vehi.laneId()].append(vehi.vehicleDriving().currDistanceInRoad())
     return data, link_veh_mapping
 
 
-def get_height_funs():
-    data = json.load(open(CENTER_POINT_PATH))
-    lane_code_mapping = {
-        "KX1": 0,
-        "KX2": 1,
-        "KX3": 2,
-    }
-    height_funs = {}
-    for key in ["KX1", "KX2", "KX3"]:
-        demo_data = data[key]
-        x_list = [i['longitude'] for i in demo_data]
-        z_list = [i['z'] for i in demo_data]
-        f = interp1d(x_list, z_list, kind='linear', fill_value="extrapolate")
-        height_funs[lane_code_mapping[key]] = f
-    return height_funs
+# def get_height_funs():
+#     data = json.load(open(CENTER_POINT_PATH))
+#     lane_code_mapping = {
+#         "KX1": 0,
+#         "KX2": 1,
+#         "KX3": 2,
+#     }
+#     height_funs = {}
+#     for key in ["KX1", "KX2", "KX3"]:
+#         demo_data = data[key]
+#         x_list = [i['longitude'] for i in demo_data]
+#         z_list = [i['z'] for i in demo_data]
+#         f = interp1d(x_list, z_list, kind='linear', fill_value="extrapolate")
+#         height_funs[lane_code_mapping[key]] = f
+#     return height_funs
+

@@ -15,10 +15,9 @@ from multiprocessing import Queue
 from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name
 from utils.log import setup_log
 from utils.scocket_model import WebSocketUtil
-from utils.functions import get_height_funs
-
 
 logger = logging.getLogger(log_name)
+
 
 class Producer:
     def __init__(self, logger, host, port, topic):
@@ -66,7 +65,6 @@ class MyProcess:
         p3.start()
 
     def websocket_process(self, websocket_queue):
-        height_funs = get_height_funs()
         # 子进程有一个websocket，用来与前端进行通信
         web = WebSocketUtil(port=WEB_PORT)
         web.start_socket_server()
@@ -77,7 +75,7 @@ class MyProcess:
             if len(users):
                 for obj in data[0]["objs"]:
                     lon, lat = p(obj['x'], -obj['y'], inverse=True)
-                    obj.update(longitude=lon, latitude=lat, height=height_funs[obj['lane_number']](lon).tolist())
+                    obj.update(longitude=lon, latitude=lat)
                 send_users = copy.copy(users)
                 for user in send_users:
                     web.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
@@ -85,7 +83,6 @@ class MyProcess:
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
         logger = setup_log(os.path.join(LOG_FILE_DIR, 'send'), log_name, when="D", interval=7, backupCount=2)
-        height_funs = get_height_funs()
         while True:
             try:
                 producer = Producer(logger, *args)
@@ -98,8 +95,8 @@ class MyProcess:
 
                     for obj in data[0]["objs"]:
                         lon, lat = p(obj['x'], -obj['y'], inverse=True)
-                        obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000), height=height_funs[obj['lane_number']](lon).tolist())
-                        # obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000))
+                        # obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000), height=height_funs[obj['lane_number']](lon).tolist())
+                        obj.update(longitude=int(lon * 10000000), latitude=int(lat * 10000000))
                     producer.send(data)
             except:
                 error = str(traceback.format_exc())
@@ -119,13 +116,13 @@ class MyProcess:
 
                 for message in consumer:
                     message = json.loads(message.value)
+                    position_id = message.get('positionId')
+
                     data = {}
                     for obj in message.get('objs', []):
                         if obj.get("longitude") and obj.get("latitude") and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
                             x, y = p(obj['longitude'] / 10000000, obj['latitude'] / 10000000)
-                            # obj.update(x=x, y=-y, position_id=position_id)
-                            # obj.update(x=x, y=-y)
 
                             obj.update(
                                 {
@@ -136,6 +133,7 @@ class MyProcess:
                                     'origin_speed': obj.get('speed', 2000) / 100,
                                     'car_type': obj.get('vehType'),
                                     'lane_id': obj.get('laneId') or 1,
+                                    'position_id': position_id,
                                 }
                             )
 
