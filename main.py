@@ -17,7 +17,7 @@ from utils.log import setup_log
 
 
 if __name__ == '__main__':
-    logger = setup_log(os.path.join(LOG_FILE_DIR, 'main'), log_name, when="MIDNIGHT", interval=7, backupCount=2)
+    logger = setup_log(os.path.join(LOG_FILE_DIR, 'main'), log_name, when="MIDNIGHT")
     logger.info('start process')
 
     config_module = __import__('utils.config', fromlist=('config',))

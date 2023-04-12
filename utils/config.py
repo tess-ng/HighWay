@@ -130,7 +130,7 @@ BASEPATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 路网文件位置
 # 路网绘制时 BHX_road_WN_Export10m 按车道被分成两个文件，BHX_ramps_Export10m 被分成前后两段绘制，打断删减形成三个路段
-TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_4_11.tess")
+TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_3_31.tess")
 
 # 日志文件位置
 log_name = "tessng"

@@ -4,6 +4,8 @@ import re
 
 from logging.handlers import TimedRotatingFileHandler
 
+from utils.config import log_level
+
 
 def setup_log(log_dir, log_name, when="D", interval=1, backupCount=7):  # 切割单位，频率以及保存的时间
     if not os.path.exists(log_dir):
@@ -13,9 +15,9 @@ def setup_log(log_dir, log_name, when="D", interval=1, backupCount=7):  # 切割
     logger = logging.getLogger(log_name)
     log_path = os.path.join(log_dir, log_name)
     # 设置日志记录等级
-    logger.setLevel(logging.INFO)
+    logger.setLevel(log_level)
 
-    # when 单位时间 "S": Seconds, "M": Minutes, "H": Hours, "D": Days, "W": Week
+    # when 单位时间 "S": Seconds, "M": Minutes, "H": Hours, "D": Days, "W": Week  "W" 必须指定滚动日期，0 is Monday
     # interval 滚动周期，指interval个when后，进行切割
     # when="MIDNIGHT", interval=1 表示每天0点为更新点，每天生成一个文件
     # backupCount  表示日志保存个数

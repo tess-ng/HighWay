@@ -16,8 +16,6 @@ from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name
 from utils.log import setup_log
 from utils.scocket_model import WebSocketUtil
 
-logger = logging.getLogger(log_name)
-
 
 class Producer:
     def __init__(self, logger, host, port, topic):
@@ -27,7 +25,7 @@ class Producer:
                                       max_request_size=20 * 1024 * 1024)
 
     def send(self, value):  # key@value 采用同样的key可以保证消息的顺序
-        return
+        # return
         self.producer.send(self.topic, key=json.dumps(self.topic).encode('utf-8'),
                            value=json.dumps(value).encode('utf-8')).add_callback(self.on_send_success).add_errback(
             self.on_send_error).get()
@@ -65,24 +63,43 @@ class MyProcess:
         p3.start()
 
     def websocket_process(self, websocket_queue):
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'ws'), log_name, when="W0")
         # 子进程有一个websocket，用来与前端进行通信
         web = WebSocketUtil(port=WEB_PORT)
         web.start_socket_server()
         users = web.users
         while True:
             data = websocket_queue.get()
-            logger.debug(f"websocket users: {len(users)}, data size {len(data[0]['objs'])}")
+            logger.info(f"websocket users: {len(users)}, data size {len(data[0]['objs'])}")
             if len(users):
+                # TODO 删除无关字段
                 for obj in data[0]["objs"]:
                     lon, lat = p(obj['x'], -obj['y'], inverse=True)
                     obj.update(longitude=lon, latitude=lat)
+
+                new_objs = []
+                for obj in data[0]["objs"]:
+                    new_objs.append(
+                        {
+                            'angleGps': obj['angleGps'],
+                            'height': obj['height'],
+                            'longitude': obj['longitude'],
+                            'latitude': obj['latitude'],
+                            'id': obj.get('id'),
+                            'vehColor': obj.get('vehColor'),
+                            'vehPlateColor': obj.get('vehPlateColor'),
+                            'vehPlateString': obj.get('vehPlateString'),
+                            'vehType': obj.get('vehType'),
+                        }
+                    )
+                data[0]['objs'] = new_objs
                 send_users = copy.copy(users)
                 for user in send_users:
                     web.send_msg(user, bytes(json.dumps(data), encoding="utf-8"))
 
     # 用来向kafka发送消息
     def send(self, send_queue, *args):
-        logger = setup_log(os.path.join(LOG_FILE_DIR, 'send'), log_name, when="D", interval=7, backupCount=2)
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'send'), log_name, when="W0")
         while True:
             try:
                 producer = Producer(logger, *args)
@@ -104,7 +121,7 @@ class MyProcess:
 
     # 用来读取kafka的雷达轨迹消息
     def take(self, host, port, topic, origin_data):
-        logger = setup_log(os.path.join(LOG_FILE_DIR, 'take'), log_name, when="D", interval=7, backupCount=2)
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'take'), log_name, when="W0")
         while True:
             try:
                 consumer = KafkaConsumer(

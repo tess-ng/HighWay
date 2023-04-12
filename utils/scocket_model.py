@@ -52,7 +52,11 @@ class WebSocketUtil(object):
             return
         conn.settimeout(0)
 
-        logger.info(f'websocket add new user: {len(self.users)} {conn} {self.users}')
+        # 设置发送缓冲区大小
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024 * 1024 * 5)
+        send_buff = conn.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
+        logger.info(f'websocket socket buffer size {send_buff}')
+
         # 获取握手消息，magic string ,sha1加密  发送给客户端  握手消息
         data = conn.recv(8096)
         headers = self.get_headers(data)
@@ -71,6 +75,7 @@ class WebSocketUtil(object):
         # 响应握手信息
         conn.sendall(bytes(response_str, encoding='utf-8'), )
         self.users.add(conn)
+        logger.info(f'websocket add new user: {len(self.users)} {conn} {self.users}')
 
     # 向客户端发送数据
     def send_msg(self, conn, msg_bytes):
@@ -80,11 +85,12 @@ class WebSocketUtil(object):
         :param msg_bytes: 向客户端发送的字节
         :return:
         """
-        token = b"\x81"  # 接收的第一字节，一般都是x81不变
+        # token = b"\x81"  # 接收的第一字节，一般都是x81不变
+        token = struct.pack("B", 129)
         length = len(msg_bytes)
-        if length < 126:
+        if length <= 125:
             token += struct.pack("B", length)
-        elif length <= 0xFFFF:
+        elif length <= 65535:  # (2 ** 16 - 1):
             token += struct.pack("!BH", 126, length)
         else:
             token += struct.pack("!BQ", 127, length)
@@ -97,10 +103,10 @@ class WebSocketUtil(object):
             pass
         except:
             # 删除断开连接的记录
-            error = str(traceback.format_exc())
-            logger.warning(f'websocket users delete user: {self.users} {error}')
             self.users.remove(conn)
             conn.close()
+            error = str(traceback.format_exc())
+            logger.warning(f'websocket users delete user: {self.users} {error}')
 
     def wait_socket_connect(self):
         """
