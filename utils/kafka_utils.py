@@ -135,9 +135,14 @@ class MyProcess:
                     message = json.loads(message.value)
                     position_id = message.get('positionId')
 
+                    # TODO 单雷达点发车
+                    # if position_id != 'CGCD3':
+                    # if position_id != 'CD101':
+                    #     continue
+
                     data = {}
                     for obj in message.get('objs', []):
-                        if obj.get("longitude") and obj.get("latitude") and (
+                        if obj.get("longitude") and obj.get("latitude") and obj.get('laneId') and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
                             x, y = p(obj['longitude'] / 10000000, obj['latitude'] / 10000000)
 

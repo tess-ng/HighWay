@@ -130,7 +130,7 @@ BASEPATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 路网文件位置
 # 路网绘制时 BHX_road_WN_Export10m 按车道被分成两个文件，BHX_ramps_Export10m 被分成前后两段绘制，打断删减形成三个路段
-TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_3_31.tess")
+TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_04_23.tess")
 
 # 日志文件位置
 log_name = "tessng"
@@ -148,5 +148,5 @@ WEB_PORT = 8834
 p = Proj('+proj=tmerc +lon_0=121.41006548017288 +lat_0=31.233770912743578 +ellps=WGS84')
 
 # 北横中心线点位高程文件
-CENTER_POINT_PATH = os.path.join(BASEPATH, 'files', 'points')
+CENTER_POINT_PATH = os.path.join(BASEPATH, 'files', 'points_04_23')
 

@@ -251,6 +251,8 @@ def get_vehi_info(simuiface):
         if vehiStatus and lane:  # 确保车辆在路网上
             origin_data = vehi.jsonInfo()
             mPoint = get_attr(vehiStatus, 'mPoint')
+            if not mPoint:
+                continue
             origin_data.update(
                 {
                     'x': p2m(mPoint.x()),

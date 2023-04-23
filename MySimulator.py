@@ -143,7 +143,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         location = locations and locations[0]
 
         # TODO 调整为 网格化的移动
-        # 在 部分雷达区域直接 移动
+        # 在 部分雷达区域直接 移动,
         if False:  # location:
             veh.vehicleDriving().move(location.pLaneObject, location.distToStart)
             veh.setJsonProperty('speed', data['origin_speed'])
@@ -152,6 +152,16 @@ class MySimulator(QObject, PyCustomerSimulator):
             veh.setJsonProperty('real', [data['x'], data['y']])
             veh.setJsonProperty('speeds', json_info.get('speeds', []) + [data['origin_speed']])
             return
+
+        # # 如果不是在同一路段，直接移动比较合理 TODO 同时记录数据
+        # if location:
+        #     # if location.pLaneObject.isLane():
+        #     #     lane = location.pLaneObject.castToLane()
+        #     # else:
+        #     #     lane = location.pLaneObject.castToLaneConnector()
+        #     if veh.roadIsLink() and location.pLaneObject.isLane() and veh.roadId() == location.pLaneObject.castToLane().link().id():
+        #         # 在同一路段上不move
+        #         pass
 
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
@@ -182,7 +192,6 @@ class MySimulator(QObject, PyCustomerSimulator):
 
     # 过载的父类方法，TESS NG 在每个计算周期结束后调用此方法，大量用户逻辑在此实现，注意耗时大的计算要尽可能优化，否则影响运行效率
     def afterOneStep(self):
-        logger.info(f"start_afterOneStep: {time.time()}")
         global new_cars
 
         my_process = sys.modules["__main__"].__dict__['myprocess']
@@ -196,6 +205,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         netiface = iface.netInterface()
         # 当前已仿真时间，单位：毫秒
         simuTime = simuiface.simuTimeIntervalWithAcceMutiples()
+        logger.info(f"simuTime:{simuTime},  start_afterOneStep: {time.time()}")
         lAllVehi = simuiface.allVehicle()
 
         # 当前正在运行车辆列表
@@ -264,7 +274,7 @@ class MySimulator(QObject, PyCustomerSimulator):
                     # 设置属性
                     data.update(
                         {
-                            "speed": data['origin_speed'],  # TODO 暂时取消1.5倍的加速
+                            "speed": data['origin_speed'],
                             "init_time": simuiface.simuTimeIntervalWithAcceMutiples(),
                             'sim': [data['x'], data['y']],
                             'real': [data['x'], data['y']],
@@ -276,33 +286,45 @@ class MySimulator(QObject, PyCustomerSimulator):
                     create_car_count += 1
                     link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
 
+        # logger.info(f"origin_cars : {len(origin_cars)} {origin_cars.keys()} {[i['plat'] for i in veh_groups[0]]}")
         logger.info(
-            f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+            f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, origin_cars_count: {len(group_origin_cars)},  surplus_cars: {len(surplus_cars)}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         return
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
+        # 此处的y已经被取负了
         locations = netiface.locateOnCrid(QPointF(m2p(data['x']), m2p(data['y'])), 9)
-
-        # 车辆允许在任何地方被创建
-        location = locations and locations[0]
-        if not location:
+        if not locations:
             return
 
-        # 在任意位置创建车辆 TODO 根据前端传入的车道编号创建车辆
+        location = locations[0]
         dvp = Online.DynaVehiParam()
-        if location.pLaneObject.isLane():
-            lane = location.pLaneObject.castToLane()
-            dvp.roadId = lane.link().id()
-            dvp.laneNumber = lane.number()
-        else:
-            lane_connector = location.pLaneObject.castToLaneConnector()
-            dvp.roadId = lane_connector.connector().id()
-            dvp.laneNumber = lane_connector.fromLane().number()
-            dvp.toLaneNumber = lane_connector.toLane().number()
 
+        # 车辆允许在任何地方被创建
+        # if location.pLaneObject.isLane():
+        #     lane = location.pLaneObject.castToLane()
+        #     dvp.roadId = lane.link().id()
+        #     dvp.laneNumber = lane.number()
+        # else:
+        #     lane_connector = location.pLaneObject.castToLaneConnector()
+        #     dvp.roadId = lane_connector.connector().id()
+        #     dvp.laneNumber = lane_connector.fromLane().number()
+        #     dvp.toLaneNumber = lane_connector.toLane().number()
+
+        # TODO 根据前端传入的车道编号创建车辆，只在路段上进行发车
         dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data['car_type'] or 1)), 13)
         dvp.dist = location.distToStart
         dvp.speed = data['origin_speed']
         dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
-        veh = simuiface.createGVehicle(dvp)
-        return veh
+        for location in locations:
+            if not location.pLaneObject.isLane():
+                continue
+            lane = location.pLaneObject.castToLane()
+            link = lane.link()
+            lane_number = len(link.lanes()) - data['laneId']
+            # 找到了合适的车道，进行发车
+            if lane_number >= 0:
+                dvp.roadId = link.id()
+                dvp.laneNumber = lane_number
+                veh = simuiface.createGVehicle(dvp)
+                return veh
