@@ -134,7 +134,7 @@ TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_4_11.tess")
 
 # 日志文件位置
 log_name = "tessng"
-log_level = logging.INFO
+log_level = logging.DEBUG
 LOG_FILE_DIR = os.path.join(BASEPATH, 'Log')
 
 # 路网网格化尺寸

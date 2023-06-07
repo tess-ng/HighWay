@@ -14,13 +14,14 @@ from Tessng import *
 from VehicleMatch.geoCalculation import Vector, Point
 from utils.config import smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
     after_step_interval, after_one_step_interval, reference_time, idle_length, change_lane_period, LD_groups, \
-    LD_group_mapping, network_max_speed, LD_create_link_mapping, log_name
+    LD_group_mapping, network_max_speed, LD_create_link_mapping, log_name, change_lane_frequency
 from utils.functions import diff_cars, get_vehi_info
 import logging
 
-
 logger = logging.getLogger(log_name)
 new_cars = {}
+
+
 # 用户插件子类，代表用户自定义与仿真相关的实现逻辑，继承自PyCustomerSimulator
 #     多重继承中的父类QObject，在此目的是要能够自定义信号signlRunInfo
 class MySimulator(QObject, PyCustomerSimulator):
@@ -73,14 +74,14 @@ class MySimulator(QObject, PyCustomerSimulator):
         # vehi.setSteps_calcSpeedLimitByLane(1)
         # #计算安全变道方法被调用频次
         # vehi.setSteps_calcChangeLaneSafeDist(1)
-        #重新计算是否可以左强制变道方法被调用频次
-        vehi.setSteps_reCalcToLeftLane(change_lane_period)
-        #重新计算是否可以右强制变道方法被调用频次
-        vehi.setSteps_reCalcToRightLane(change_lane_period)
-        # #重新计算是否可以左自由变道方法被调用频次
-        # vehi.setSteps_reCalcToLeftFreely(1)
-        # # 重新计算是否可以右自由变道方法被调用频次
-        # vehi.setSteps_reCalcToRightFreely(1)
+        # # 重新计算是否可以左强制变道方法被调用频次
+        # vehi.setSteps_reCalcToLeftLane(change_lane_period)
+        # # 重新计算是否可以右强制变道方法被调用频次
+        # vehi.setSteps_reCalcToRightLane(change_lane_period)
+        #重新计算是否可以左自由变道方法被调用频次 tessng车辆的变道本身不受二次开发控制，会有自己的处理逻辑，但是可以使用beforeToLeftFreely去影响
+        vehi.setSteps_reCalcToLeftFreely(1)
+        # 重新计算是否可以右自由变道方法被调用频次
+        vehi.setSteps_reCalcToRightFreely(1)  # change_lane_period
         # #计算跟驰类型后处理方法被调用频次
         # vehi.setSteps_afterCalcTracingType(1)
         # #连接段上汇入到车道前处理方法被调用频次
@@ -143,7 +144,7 @@ class MySimulator(QObject, PyCustomerSimulator):
 
         # TODO 调整为 网格化的移动
         # 在 部分雷达区域直接 移动
-        if location:
+        if False:  # location:
             veh.vehicleDriving().move(location.pLaneObject, location.distToStart)
             veh.setJsonProperty('speed', data['origin_speed'])
             veh.setJsonProperty('init_time', simuiface.simuTimeIntervalWithAcceMutiples())
@@ -151,6 +152,16 @@ class MySimulator(QObject, PyCustomerSimulator):
             veh.setJsonProperty('real', [data['x'], data['y']])
             veh.setJsonProperty('speeds', json_info.get('speeds', []) + [data['origin_speed']])
             return
+
+        # # 如果不是在同一路段，直接移动比较合理
+        # if location:
+        #     # if location.pLaneObject.isLane():
+        #     #     lane = location.pLaneObject.castToLane()
+        #     # else:
+        #     #     lane = location.pLaneObject.castToLaneConnector()
+        #     if veh.roadIsLink() and location.pLaneObject.isLane() and veh.roadId() == location.pLaneObject.castToLane().link().id():
+        #         # 在同一路段上不move
+        #         pass
 
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
@@ -169,10 +180,10 @@ class MySimulator(QObject, PyCustomerSimulator):
         projection_scale = np.dot(x, y) / np.dot(x, x)  # 投影比例
         module_x = np.sqrt(np.dot(x, x))  # x的模长
         real_speed = data['origin_speed']
-        sim_new_speed = min(max(real_speed + (projection_scale * module_x).tolist() / (smoothing_time / 1000), real_speed / 2),
-                            real_speed * 2, network_max_speed)
+        sim_new_speed = min(
+            max(real_speed + (projection_scale * module_x).tolist() / (smoothing_time / 1000), real_speed / 2),
+            real_speed * 2, network_max_speed)
 
-        # print(sim_position, veh.angle(), angle, x, y, driving_direction_vector, sim_position, real_positon, sim_new_speed, real_speed, projection_scale)
         veh.setJsonProperty('speed', sim_new_speed)
         veh.setJsonProperty('init_time', simuiface.simuTimeIntervalWithAcceMutiples())
         veh.setJsonProperty('sim', sim_position)
@@ -181,7 +192,6 @@ class MySimulator(QObject, PyCustomerSimulator):
 
     # 过载的父类方法，TESS NG 在每个计算周期结束后调用此方法，大量用户逻辑在此实现，注意耗时大的计算要尽可能优化，否则影响运行效率
     def afterOneStep(self):
-        logger.info(f"start_afterOneStep: {time.time()}")
         global new_cars
 
         my_process = sys.modules["__main__"].__dict__['myprocess']
@@ -195,6 +205,7 @@ class MySimulator(QObject, PyCustomerSimulator):
         netiface = iface.netInterface()
         # 当前已仿真时间，单位：毫秒
         simuTime = simuiface.simuTimeIntervalWithAcceMutiples()
+        logger.info(f"simuTime:{simuTime},  start_afterOneStep: {time.time()}")
         lAllVehi = simuiface.allVehicle()
 
         # 当前正在运行车辆列表
@@ -216,7 +227,8 @@ class MySimulator(QObject, PyCustomerSimulator):
         if timestamp - my_process.origin_data['timestamp'] < after_one_step_interval:
             return
 
-        logger.info(f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+        logger.info(
+            f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         try:
             origin_cars = my_process.origin_data['data']
             my_process.origin_data['data'] = {}
@@ -274,32 +286,69 @@ class MySimulator(QObject, PyCustomerSimulator):
                     create_car_count += 1
                     link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
 
-        logger.info(f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+            logger.info(
+                f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, origin_cars_count: {len(group_origin_cars)},  surplus_cars: {len(surplus_cars)}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         return
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
         locations = netiface.locateOnCrid(QPointF(m2p(data['x']), m2p(data['y'])), 9)
-
-        # 车辆允许在任何地方被创建
-        location = locations and locations[0]
-        if not location:
+        if not locations:
             return
 
-        # 在任意位置创建车辆 TODO 根据前端传入的车道编号创建车辆
+        # 车辆允许在任何地方被创建
+        location = locations[0]
         dvp = Online.DynaVehiParam()
-        if location.pLaneObject.isLane():
-            lane = location.pLaneObject.castToLane()
-            dvp.roadId = lane.link().id()
-            dvp.laneNumber = lane.number()
-        else:
-            lane_connector = location.pLaneObject.castToLaneConnector()
-            dvp.roadId = lane_connector.connector().id()
-            dvp.laneNumber = lane_connector.fromLane().number()
-            dvp.toLaneNumber = lane_connector.toLane().number()
-
+#        if location.pLaneObject.isLane():
+#            lane = location.pLaneObject.castToLane()
+#            dvp.roadId = lane.link().id()
+#            dvp.laneNumber = lane.number()
+#        else:
+#            lane_connector = location.pLaneObject.castToLaneConnector()
+#            dvp.roadId = lane_connector.connector().id()
+#            dvp.laneNumber = lane_connector.fromLane().number()
+#            dvp.toLaneNumber = lane_connector.toLane().number()
+#
+        # TODO 根据前端传入的车道编号创建车辆，只在路段上进行发车
         dvp.vehiTypeCode = car_veh_type_code_mapping.get(int(float(data['car_type'] or 1)), 13)
         dvp.dist = location.distToStart
         dvp.speed = data['origin_speed']
         dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
-        veh = simuiface.createGVehicle(dvp)
-        return veh
+        for location in locations:
+            if not location.pLaneObject.isLane():
+                continue
+            lane = location.pLaneObject.castToLane()
+            link = lane.link()
+            lane_number = len(link.lanes()) - data['lane_id']
+            # 找到了合适的车道，进行发车
+            if lane_number >= 0:
+                dvp.roadId = link.id()
+                dvp.laneNumber = lane_number
+                veh = simuiface.createGVehicle(dvp)
+                return veh
+
+    # 计算是否有权利进行左右自由变道,降低变道频率
+    def ref_beforeToLeftFreely(self, veh, ref_keepOn):
+        # 降低变道频率,change_lane_frequency 越小，禁止计算是否自由变道的可能性越大
+        if random.random() > change_lane_frequency:
+            ref_keepOn.value = False
+        return None
+
+    def ref_beforeToRightFreely(self, veh, ref_keepOn):
+        # 降低变道频率,change_lane_frequency 越小，禁止计算是否自由变道的可能性越大
+        if random.random() > change_lane_frequency:
+            ref_keepOn.value = False
+        return None
+
+    # 添加车道限行
+    def calcLimitedLaneNumber(self, veh):
+        limit_lanes = []
+        if veh.roadIsLink():
+            lane_id = veh.jsonInfo()['lane_id']  # lane_id 必定存在
+            run_lane = veh.lane()
+            link = run_lane.link()
+            lane_number = len(link.lanes()) - lane_id
+            if lane_number >= 0:
+                limit_lanes = [lane.number() for lane in run_lane.link().lanes() if lane.number() != lane_number]
+
+            # logger.info(f'车道限行: lane_number: {run_lane.number()}, lane_id: {lane_id}, limit: {limit_lanes}, run_number: {lane_number}')
+        return limit_lanes

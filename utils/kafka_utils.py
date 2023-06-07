@@ -16,8 +16,6 @@ from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name
 from utils.log import setup_log
 from utils.scocket_model import WebSocketUtil
 
-logger = logging.getLogger(log_name)
-
 
 class Producer:
     def __init__(self, logger, host, port, topic):
@@ -65,6 +63,7 @@ class MyProcess:
         p3.start()
 
     def websocket_process(self, websocket_queue):
+        logger = setup_log(os.path.join(LOG_FILE_DIR, 'ws'), log_name, when="D", interval=7, backupCount=2)
         # 子进程有一个websocket，用来与前端进行通信
         web = WebSocketUtil(port=WEB_PORT)
         web.start_socket_server()
