@@ -7,7 +7,7 @@ import time
 import traceback
 import numpy as np
 
-from math import cos, sin, pi
+from math import cos, sin, pi, sqrt
 from random import choice
 from PySide2.QtCore import *
 from Tessng import *
@@ -79,9 +79,9 @@ class MySimulator(QObject, PyCustomerSimulator):
         # # 重新计算是否可以右强制变道方法被调用频次
         # vehi.setSteps_reCalcToRightLane(change_lane_period)
         #重新计算是否可以左自由变道方法被调用频次 tessng车辆的变道本身不受二次开发控制，会有自己的处理逻辑，但是可以使用beforeToLeftFreely去影响
-        vehi.setSteps_reCalcToLeftFreely(1)
+        vehi.setSteps_reCalcToLeftFreely(100)
         # 重新计算是否可以右自由变道方法被调用频次
-        vehi.setSteps_reCalcToRightFreely(1)  # change_lane_period
+        vehi.setSteps_reCalcToRightFreely(100)  # change_lane_period
         # #计算跟驰类型后处理方法被调用频次
         # vehi.setSteps_afterCalcTracingType(1)
         # #连接段上汇入到车道前处理方法被调用频次
@@ -168,6 +168,21 @@ class MySimulator(QObject, PyCustomerSimulator):
         # 在路段的起终位置进行映射，其他位置仿真
         real_positon = [data['x'], data['y']]
         sim_position = [p2m(veh.pos().x()), p2m(veh.pos().y())]
+
+        # move 很容易崩溃  TODO 添加车道级别判断
+        location_position = [m2p(location.point.x()), m2p(location.point.y())]
+        if data.get('is_identical') and sqrt((location_position[0] - sim_position[0]) ** 2 + (location_position[1] - sim_position[1]) ** 2) > 200:
+            veh.vehicleDriving().move(location.pLaneObject, location.distToStart)
+            real_speed = data['origin_speed']
+            # 更新属性
+            veh.setJsonProperty('speed', real_speed)
+            veh.setJsonProperty('init_time', simuiface.simuTimeIntervalWithAcceMutiples())
+            veh.setJsonProperty('sim', [p2m(veh.pos().x()), p2m(veh.pos().y())])
+            veh.setJsonProperty('real', real_positon)
+            veh.setJsonProperty('speeds', json_info.get('speeds', []) + [real_speed])
+            veh.setJsonProperty('moves', json_info.get('moves', []) + [time.time()])
+            print(f"move {veh.id()} {real_speed} {json.dumps(json_info['plat'])} {veh.jsonInfo().get('moves')} {location_position} {sim_position} {real_positon}")
+            return
 
         # 计算车辆位置差异与前进方向的余弦值
         angle = (veh.angle() - 90) / 180 * pi
@@ -280,6 +295,7 @@ class MySimulator(QObject, PyCustomerSimulator):
                             'real': [data['x'], data['y']],
                             'plats': [plat],
                             'speeds': [data['origin_speed']],
+                            'moves': [],
                         }
                     )
                     veh.setJsonInfo(data)
@@ -340,15 +356,15 @@ class MySimulator(QObject, PyCustomerSimulator):
         return None
 
     # 添加车道限行
-    def calcLimitedLaneNumber(self, veh):
-        limit_lanes = []
-        if veh.roadIsLink():
-            lane_id = veh.jsonInfo()['lane_id']  # lane_id 必定存在
-            run_lane = veh.lane()
-            link = run_lane.link()
-            lane_number = len(link.lanes()) - lane_id
-            if lane_number >= 0:
-                limit_lanes = [lane.number() for lane in run_lane.link().lanes() if lane.number() != lane_number]
+    #def calcLimitedLaneNumber(self, veh):
+    #    limit_lanes = []
+    #    if veh.roadIsLink():
+    #        lane_id = veh.jsonInfo()['lane_id']  # lane_id 必定存在
+    #        run_lane = veh.lane()
+    #        link = run_lane.link()
+    #        lane_number = len(link.lanes()) - lane_id
+    #        if lane_number >= 0:
+    #            limit_lanes = [lane.number() for lane in run_lane.link().lanes() if lane.number() != lane_number]
 
-            # logger.info(f'车道限行: lane_number: {run_lane.number()}, lane_id: {lane_id}, limit: {limit_lanes}, run_number: {lane_number}')
-        return limit_lanes
+    #        #logger.info(f'车道限行: lane_number: {run_lane.number()}, lane_id: {lane_id}, limit: {limit_lanes}, run_number: {lane_number}')
+    #    return limit_lanes

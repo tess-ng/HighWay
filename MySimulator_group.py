@@ -17,10 +17,13 @@ from utils.config import smoothing_time, car_veh_type_code_mapping, accuracy, ac
     LD_group_mapping, network_max_speed, LD_create_link_mapping, log_name
 from utils.functions import diff_cars, get_vehi_info
 import logging
+
 # TODO 对雷达分组
 
 logger = logging.getLogger(log_name)
 new_cars = {}
+
+
 # 用户插件子类，代表用户自定义与仿真相关的实现逻辑，继承自PyCustomerSimulator
 #     多重继承中的父类QObject，在此目的是要能够自定义信号signlRunInfo
 class MySimulator(QObject, PyCustomerSimulator):
@@ -73,9 +76,9 @@ class MySimulator(QObject, PyCustomerSimulator):
         # vehi.setSteps_calcSpeedLimitByLane(1)
         # #计算安全变道方法被调用频次
         # vehi.setSteps_calcChangeLaneSafeDist(1)
-        #重新计算是否可以左强制变道方法被调用频次
+        # 重新计算是否可以左强制变道方法被调用频次
         vehi.setSteps_reCalcToLeftLane(change_lane_period)
-        #重新计算是否可以右强制变道方法被调用频次
+        # 重新计算是否可以右强制变道方法被调用频次
         vehi.setSteps_reCalcToRightLane(change_lane_period)
         # #重新计算是否可以左自由变道方法被调用频次
         # vehi.setSteps_reCalcToLeftFreely(1)
@@ -201,8 +204,9 @@ class MySimulator(QObject, PyCustomerSimulator):
         projection_scale = np.dot(x, y) / np.dot(x, x)  # 投影比例
         module_x = np.sqrt(np.dot(x, x))  # x的模长
         real_speed = data['origin_speed']
-        sim_new_speed = min(max(real_speed + (projection_scale * module_x).tolist() / (smoothing_time / 1000), real_speed / 2),
-                            real_speed * 2, network_max_speed)
+        sim_new_speed = min(
+            max(real_speed + (projection_scale * module_x).tolist() / (smoothing_time / 1000), real_speed / 2),
+            real_speed * 2, network_max_speed)
 
         # print(sim_position, veh.angle(), angle, x, y, driving_direction_vector, sim_position, real_positon, sim_new_speed, real_speed, projection_scale)
         veh.setJsonProperty('speed', sim_new_speed)
@@ -248,7 +252,8 @@ class MySimulator(QObject, PyCustomerSimulator):
         if timestamp - my_process.origin_data['timestamp'] < after_one_step_interval:
             return
 
-        logger.info(f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+        logger.info(
+            f"start match {simuTime}, {time.time()}, 'car count:', {len([veh for veh in lAllVehi if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         try:
             origin_cars = my_process.origin_data['data']
             my_process.origin_data['data'] = {}
@@ -327,7 +332,8 @@ class MySimulator(QObject, PyCustomerSimulator):
                     create_car_count += 1
                     link_veh_mapping[veh.laneId()].append(veh.vehicleDriving().currDistanceInRoad())
 
-        logger.info(f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
+        logger.info(
+            f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         return
 
     def create_car(self, netiface, simuiface, data, link_veh_mapping=None):

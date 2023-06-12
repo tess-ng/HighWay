@@ -5,39 +5,8 @@ import logging
 
 from pyproj import Proj
 
-car_veh_type_code_mapping = {
-    1: 13,  # 轿车
-    2: 14,  # SUV
-    3: 15,  # 小客面包车
-    4: 16,  # 中客、轻客
-    5: 17,  # 大客、公交
-    6: 18,  # 小型货车
-    7: 19,  # 轻型货车
-    8: 25,  # 中型货车
-    9: 20,  # 重型货车
-    10: 21,  # MPV
-    11: 26,  # 皮卡
-    12: 22,  # 厢式货车
-    13: 23,  # 摩托车
-    14: 24,  # 其他
-}
-
-car_veh_type_name_mapping = {
-    1: "轿车",
-    2: "SUV",
-    3: "小客车",
-    4: "中客、轻客",
-    5: "大客、公交",
-    6: "小型货车",
-    7: "轻型货车",
-    8: "中型货车",
-    9: "重型货车",
-    10: "MPV",
-    11: "皮卡",
-    12: "厢式货车",
-    13: "摩托车",
-    14: "其他",
-}
+# 变道频率
+change_lane_frequency = 0.1
 
 # 是否需要对雷达分组
 is_groups = False
@@ -45,8 +14,6 @@ is_groups = False
 LD_create_link_mapping = {}
 # 雷达映射后可能行驶的路段
 LD_create_run_link_mapping = {}
-# 对雷达进行分组，同一组内的才会寻找相似车辆(全域追踪)
-LD_groups = []
 
 cd_ids = ["CD102", "CD103", "CD104", "CD105", "CD106", "CD107", "CD108", "CD111", "CD112", "CD113", "CD114", "CD115",
        "CD116", "CD117", "CD118", "CD119", "CD120", "CD121", "CD122", "CD123", "CD124", "CD125", "CD126", "CD127",
@@ -67,6 +34,7 @@ link_ids = [1, 2, 3, 7, 8, 9, 10, 11, 15, 120, 123, 126, 130, 132, 135]
 for cd_id in cd_ids:
     LD_create_link_mapping[cd_id] = link_ids
     LD_create_run_link_mapping[cd_id] = link_ids
+# 对雷达进行分组，同一组内的才会寻找相似车辆(全域追踪)
 LD_groups = [cd_ids]
 
 # 全域雷达的雷达轨迹，允许被映射的路段
@@ -76,7 +44,7 @@ for index, group in enumerate(LD_groups):
         run_links = []
         for _ in group:
             run_links += LD_create_run_link_mapping.get(_, [])
-        # 每批次的雷达分一组
+        # 每批次的雷达分一组,分组是为了多组雷达间不会互相影响(多组分别保龄球发车)
         LD_group_mapping[position_id] = {"group": group, "index": index, 'run_links': set(run_links)}
 
 # 车辆模糊对比时需要的其他属性
@@ -130,23 +98,56 @@ BASEPATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 路网文件位置
 # 路网绘制时 BHX_road_WN_Export10m 按车道被分成两个文件，BHX_ramps_Export10m 被分成前后两段绘制，打断删减形成三个路段
-TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_4_11.tess")
+TESSNG_FILE_PATH = os.path.join(BASEPATH, 'Data', "bh_04_23.tess")
 
 # 日志文件位置
 log_name = "tessng"
-log_level = logging.DEBUG
+log_level = logging.INFO
 LOG_FILE_DIR = os.path.join(BASEPATH, 'Log')
 
 # 路网网格化尺寸
-network_grid_size = 5
+network_grid_size = 20
 
 # 对外暴露的ws端口
-WEB_PORT = 8834
+WEB_PORT = 8009
 
 # 经纬度转换依据
 # p = Proj('+proj=tmerc +lon_0=121.43806548017288 +lat_0=31.243770912743578 +ellps=WGS84')
 p = Proj('+proj=tmerc +lon_0=121.41006548017288 +lat_0=31.233770912743578 +ellps=WGS84')
 
 # 北横中心线点位高程文件
-CENTER_POINT_PATH = os.path.join(BASEPATH, 'files', 'points')
+CENTER_POINT_PATH = os.path.join(BASEPATH, 'files', 'points_04_23')
 
+car_veh_type_code_mapping = {
+    1: 13,  # 轿车
+    2: 14,  # SUV
+    3: 15,  # 小客面包车
+    4: 16,  # 中客、轻客
+    5: 17,  # 大客、公交
+    6: 18,  # 小型货车
+    7: 19,  # 轻型货车
+    8: 25,  # 中型货车
+    9: 20,  # 重型货车
+    10: 21,  # MPV
+    11: 26,  # 皮卡
+    12: 22,  # 厢式货车
+    13: 23,  # 摩托车
+    14: 24,  # 其他
+}
+
+car_veh_type_name_mapping = {
+    1: "轿车",
+    2: "SUV",
+    3: "小客车",
+    4: "中客、轻客",
+    5: "大客、公交",
+    6: "小型货车",
+    7: "轻型货车",
+    8: "中型货车",
+    9: "重型货车",
+    10: "MPV",
+    11: "皮卡",
+    12: "厢式货车",
+    13: "摩托车",
+    14: "其他",
+}

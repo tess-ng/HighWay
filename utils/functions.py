@@ -75,6 +75,7 @@ def diff_cars(veh_infos, origin_cars):
         car_plat, veh_info = combination
         # print("new car", veh_info, new_cars, adjust_cars)
         new_cars[veh_info['plat']] = origin_cars[car_plat]
+        new_cars[veh_info['plat']]['is_identical'] = veh_info['plat'] == car_plat  # 判断车牌号是否完全相同
 
     for car_plat in surplus_cars:
         new_cars[car_plat] = origin_cars[car_plat]

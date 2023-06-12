@@ -1,0 +1,11 @@
+**/__pycache__
+/.idea
+Log/
+/venv
+/SimuResult
+/Temp
+*.log
+/MySource
+**/Cert
+/Backup
+/Config
