@@ -8,47 +8,12 @@ from pyproj import Proj
 # 变道频率
 change_lane_frequency = 0.1
 
-# 是否需要对雷达分组
-is_groups = False
-# 雷达允许创建车辆对应的路段
-LD_create_link_mapping = {}
 # 雷达映射后可能行驶的路段
-LD_create_run_link_mapping = {}
+LD_create_link_mapping = {'CD003': {'is_create': False, 'links': []}, 'CD004': {'is_create': False, 'links': []}, 'CD005': {'is_create': False, 'links': []}, 'CD101': {'is_create': True, 'links': [28, 11]}, 'CD102': {'is_create': False, 'links': []}, 'CD103': {'is_create': True, 'links': [11]}, 'CD104': {'is_create': False, 'links': []}, 'CD105': {'is_create': True, 'links': [11]}, 'CD106': {'is_create': True, 'links': [11]}, 'CD107': {'is_create': False, 'links': []}, 'CD108': {'is_create': True, 'links': [11, 43]}, 'CD109': {'is_create': True, 'links': [15]}, 'CD110': {'is_create': False, 'links': []}, 'CD111': {'is_create': False, 'links': []}, 'CD112': {'is_create': True, 'links': [15]}, 'CD113': {'is_create': True, 'links': [15]}, 'CD114': {'is_create': True, 'links': [15]}, 'CD115': {'is_create': False, 'links': []}, 'CD116': {'is_create': False, 'links': []}, 'CD117': {'is_create': False, 'links': []}, 'CD118': {'is_create': False, 'links': []}, 'CD119': {'is_create': False, 'links': []}, 'CD120': {'is_create': False, 'links': []}, 'CD121': {'is_create': False, 'links': []}, 'CD122': {'is_create': False, 'links': []}, 'CD123': {'is_create': False, 'links': []}, 'CD124': {'is_create': False, 'links': []}, 'CD125': {'is_create': False, 'links': []}, 'CD126': {'is_create': False, 'links': []}, 'CD127': {'is_create': False, 'links': []}, 'CD128': {'is_create': False, 'links': []}, 'CD129': {'is_create': False, 'links': []}, 'CD130': {'is_create': False, 'links': []}, 'CD131': {'is_create': False, 'links': []}, 'CD132': {'is_create': False, 'links': []}, 'CD133': {'is_create': False, 'links': []}, 'CD134': {'is_create': False, 'links': []}, 'CD135': {'is_create': False, 'links': []}, 'CD136': {'is_create': False, 'links': []}, 'CD137': {'is_create': False, 'links': []}, 'CD138': {'is_create': False, 'links': []}, 'CD139': {'is_create': False, 'links': []}, 'CD140': {'is_create': False, 'links': []}, 'CD141': {'is_create': False, 'links': []}, 'CD142': {'is_create': False, 'links': []}, 'CD143': {'is_create': False, 'links': []}, 'CD144': {'is_create': False, 'links': []}, 'CD145': {'is_create': False, 'links': []}, 'CD146': {'is_create': False, 'links': []}, 'CD147': {'is_create': False, 'links': []}, 'CD148': {'is_create': False, 'links': []}, 'CD149': {'is_create': False, 'links': []}, 'CD150': {'is_create': False, 'links': []}, 'CD151': {'is_create': False, 'links': []}, 'CD152': {'is_create': False, 'links': []}, 'CD153': {'is_create': False, 'links': []}, 'CD154': {'is_create': False, 'links': []}, 'CD155': {'is_create': False, 'links': []}, 'CD156': {'is_create': False, 'links': []}, 'CD157': {'is_create': False, 'links': []}, 'CD158': {'is_create': False, 'links': []}, 'CD159': {'is_create': False, 'links': []}, 'CD160': {'is_create': False, 'links': []}, 'CD161': {'is_create': False, 'links': []}, 'CD162': {'is_create': False, 'links': []}, 'CD163': {'is_create': False, 'links': []}, 'CD201': {'is_create': False, 'links': []}, 'CD202': {'is_create': False, 'links': []}, 'CD203': {'is_create': False, 'links': []}, 'CD204': {'is_create': False, 'links': []}, 'CD205': {'is_create': False, 'links': []}, 'CD206': {'is_create': False, 'links': []}, 'CD207': {'is_create': False, 'links': []}, 'CD208': {'is_create': False, 'links': []}, 'CD209': {'is_create': False, 'links': []}, 'CD210': {'is_create': False, 'links': []}, 'CD211': {'is_create': False, 'links': []}, 'CD212': {'is_create': False, 'links': []}, 'CD213': {'is_create': False, 'links': []}, 'CD214': {'is_create': False, 'links': []}, 'CD215': {'is_create': False, 'links': []}, 'CD216': {'is_create': False, 'links': []}, 'CD217': {'is_create': False, 'links': []}, 'CD218': {'is_create': False, 'links': []}, 'CD219': {'is_create': False, 'links': []}, 'CD220': {'is_create': False, 'links': []}, 'CD221': {'is_create': False, 'links': []}, 'CD222': {'is_create': False, 'links': []}, 'CD223': {'is_create': False, 'links': []}, 'CD224': {'is_create': False, 'links': []}, 'CD225': {'is_create': False, 'links': []}, 'CD226': {'is_create': False, 'links': []}, 'CD227': {'is_create': False, 'links': []}, 'CD228': {'is_create': False, 'links': []}, 'CD229': {'is_create': False, 'links': []}, 'CD230': {'is_create': False, 'links': []}, 'CD231': {'is_create': False, 'links': []}, 'CD232': {'is_create': False, 'links': []}, 'CD233': {'is_create': False, 'links': []}, 'CD234': {'is_create': False, 'links': []}, 'CD235': {'is_create': False, 'links': []}, 'CD236': {'is_create': False, 'links': []}, 'CD237': {'is_create': False, 'links': []}, 'CD238': {'is_create': False, 'links': []}, 'CD239': {'is_create': False, 'links': []}, 'CD240': {'is_create': False, 'links': []}, 'CD241': {'is_create': False, 'links': []}, 'CD242': {'is_create': False, 'links': []}, 'CD243': {'is_create': False, 'links': []}, 'CD244': {'is_create': False, 'links': []}, 'CD245': {'is_create': False, 'links': []}, 'CD246': {'is_create': False, 'links': []}, 'CD247': {'is_create': False, 'links': []}, 'CD248': {'is_create': False, 'links': []}, 'CD249': {'is_create': False, 'links': []}, 'CD250': {'is_create': False, 'links': []}, 'CD251': {'is_create': False, 'links': []}, 'CD252': {'is_create': False, 'links': []}, 'CD253': {'is_create': False, 'links': []}, 'CD254': {'is_create': False, 'links': []}, 'CD255': {'is_create': False, 'links': []}, 'CD256': {'is_create': False, 'links': []}, 'CD257': {'is_create': False, 'links': []}, 'CD258': {'is_create': False, 'links': []}, 'CD259': {'is_create': False, 'links': []}, 'CD260': {'is_create': False, 'links': []}, 'CD261': {'is_create': False, 'links': []}, 'CD262': {'is_create': False, 'links': []}, 'CD263': {'is_create': False, 'links': []}, 'CD264': {'is_create': False, 'links': []}, 'CD265': {'is_create': False, 'links': []}, 'CD266': {'is_create': False, 'links': []}, 'CD267': {'is_create': False, 'links': []}, 'CD268': {'is_create': False, 'links': []}, 'CD269': {'is_create': False, 'links': []}, 'CD270': {'is_create': False, 'links': []}, 'CD271': {'is_create': False, 'links': []}, 'CD272': {'is_create': False, 'links': []}, 'CD273': {'is_create': False, 'links': []}, 'CD274': {'is_create': False, 'links': []}, 'CD275': {'is_create': False, 'links': []}, 'CD276': {'is_create': False, 'links': []}, 'CD277': {'is_create': False, 'links': []}, 'CD278': {'is_create': False, 'links': []}, 'CD279': {'is_create': False, 'links': []}, 'CD280': {'is_create': False, 'links': []}}
 
-cd_ids = ["CD102", "CD103", "CD104", "CD105", "CD106", "CD107", "CD108", "CD111", "CD112", "CD113", "CD114", "CD115",
-       "CD116", "CD117", "CD118", "CD119", "CD120", "CD121", "CD122", "CD123", "CD124", "CD125", "CD126", "CD127",
-       "CD128", "CD129", "CD130", "CD131", "CD132", "CD133", "CD134", "CD135", "CD136", "CD137", "CD138", "CD139",
-       "CD140", "CD141", "CD142", "CD143", "CD144", "CD145", "CD146", "CD147", "CD148", "CD149", "CD150", "CD151",
-       "CD152", "CD153", "CD154", "CD155", "CD156", "CD157", "CD158", "CD159", "CD160", "CD161", "CD162", "CD163",
-       "CD201", "CD211", "CD202", "CD203", "CD204", "CD205", "CD206", "CD207", "CD208", "CD209", "CD210", "CD212",
-       "CD213", "CD214", "CD215", "CD216", "CD217", "CD218", "CD219", "CD220", "CD221", "CD222", "CD223", "CD224",
-       "CD225", "CD226", "CD227", "CD228", "CD229", "CD230", "CD231", "CD232", "CD233", "CD234", "CD235", "CD236",
-       "CD237", "CD238", "CD239", "CD240", "CD241", "CD242", "CD243", "CD244", "CD245", "CD246", "CD247", "CD248",
-       "CD249", "CD250", "CD251", "CD252", "CD253", "CD254", "CD255", "CD256", "CD257", "CD258", "CD259", "CD260",
-       "CD261", "CD262", "CD263", "CD264", "CD265", "CD266", "CD267", "CD268", "CD269", "CD270", "CD271", "CD272",
-       "CD273", "CD274", "CD275", "CD276", "CD277", "CD278", "CD279", "CD280", "CGCD1", "CGCD2", "LD41", "CGLD1",
-       "CGLD2", "JMDY1", "ZD1", "CGHJ1"]
-
-link_ids = [1, 2, 3, 7, 8, 9, 10, 11, 15, 120, 123, 126, 130, 132, 135]
-
-for cd_id in cd_ids:
-    LD_create_link_mapping[cd_id] = link_ids
-    LD_create_run_link_mapping[cd_id] = link_ids
-# 对雷达进行分组，同一组内的才会寻找相似车辆(全域追踪)
-LD_groups = [cd_ids]
-
-# 全域雷达的雷达轨迹，允许被映射的路段
-LD_group_mapping = {}
-for index, group in enumerate(LD_groups):
-    for position_id in group:
-        run_links = []
-        for _ in group:
-            run_links += LD_create_run_link_mapping.get(_, [])
-        # 每批次的雷达分一组,分组是为了多组雷达间不会互相影响(多组分别保龄球发车)
-        LD_group_mapping[position_id] = {"group": group, "index": index, 'run_links': set(run_links)}
 
 # 车辆模糊对比时需要的其他属性
-match_attributes = ['car_type']  # 属性值必须相同
+match_attributes = []  # ['car_type']  # 属性值必须相同
 diff_attributes = ['position_id']  # 属性值必须不同
 
 # 创建车辆时，前后允许的最小空闲位置
@@ -61,7 +26,7 @@ network_max_speed = 30
 buffer_length = 300
 
 # 邻居车牌距离
-neighbor_distance = 100
+neighbor_distance = 300
 
 # 平滑处理允许的时间
 smoothing_time = 10000  # ms

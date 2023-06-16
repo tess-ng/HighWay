@@ -12,7 +12,7 @@ from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name
+from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name, LD_create_link_mapping
 from utils.log import setup_log
 from utils.scocket_model import WebSocketUtil
 
@@ -139,6 +139,8 @@ class MyProcess:
                     # if position_id != 'CGCD3':
                     # if position_id not in ['CD126', "CD133"]:
                     #     continue
+                    if position_id not in LD_create_link_mapping.keys():
+                        continue
 
                     data = {}
                     for obj in message.get('objs', []):

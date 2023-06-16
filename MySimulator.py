@@ -13,8 +13,7 @@ from PySide2.QtCore import *
 from Tessng import *
 from VehicleMatch.geoCalculation import Vector, Point
 from utils.config import smoothing_time, car_veh_type_code_mapping, accuracy, accemultiples, \
-    after_step_interval, after_one_step_interval, reference_time, idle_length, change_lane_period, LD_groups, \
-    LD_group_mapping, network_max_speed, LD_create_link_mapping, log_name, change_lane_frequency
+    after_step_interval, after_one_step_interval, reference_time, idle_length, change_lane_period, network_max_speed, log_name, change_lane_frequency, LD_create_link_mapping
 from utils.functions import diff_cars, get_vehi_info
 import logging
 
@@ -163,15 +162,28 @@ class MySimulator(QObject, PyCustomerSimulator):
         #         # 在同一路段上不move
         #         pass
 
+        # 判断车辆是否需要更换车道
+        if 0:  # location.pLaneObject.isLane() and veh.roadIsLink():
+            real_lane = location.pLaneObject.castToLane()
+            simu_lane = veh.lane()
+            if real_lane.link().id() == simu_lane.link().id():
+                real_lane_number = len(real_lane.link().lanes()) - data['lane_id']
+                simu_lane_number = simu_lane.number()
+                if real_lane_number > simu_lane_number:
+                    # 左转
+                    veh.vehicleDriving().toLeftLane()
+                elif real_lane_number < simu_lane_number:
+                    veh.vehicleDriving().toRightLane()
+
         # 此处，真实车辆必定在link上
         # 如果仿真车辆不再同一link，直接进行重设 -> 不可取，会导致在路段处大量的跳跃
         # 在路段的起终位置进行映射，其他位置仿真
         real_positon = [data['x'], data['y']]
         sim_position = [p2m(veh.pos().x()), p2m(veh.pos().y())]
 
-        # move 很容易崩溃  TODO 添加车道级别判断
+        # move 很容易崩溃  TODO 添加车道级别判断 是否可以在路段相差过远且加减速到达的区域进行跳跃
         location_position = [m2p(location.point.x()), m2p(location.point.y())]
-        if data.get('is_identical') and sqrt((location_position[0] - sim_position[0]) ** 2 + (location_position[1] - sim_position[1]) ** 2) > 200:
+        if 0:  # data.get('is_identical') and sqrt((location_position[0] - sim_position[0]) ** 2 + (location_position[1] - sim_position[1]) ** 2) > 200:
             veh.vehicleDriving().move(location.pLaneObject, location.distToStart)
             real_speed = data['origin_speed']
             # 更新属性
@@ -183,6 +195,7 @@ class MySimulator(QObject, PyCustomerSimulator):
             veh.setJsonProperty('moves', json_info.get('moves', []) + [time.time()])
             print(f"move {veh.id()} {real_speed} {json.dumps(json_info['plat'])} {veh.jsonInfo().get('moves')} {location_position} {sim_position} {real_positon}")
             return
+
 
         # 计算车辆位置差异与前进方向的余弦值
         angle = (veh.angle() - 90) / 180 * pi
@@ -281,7 +294,14 @@ class MySimulator(QObject, PyCustomerSimulator):
             # 针对没有匹配到tessng车辆的车辆进行发车
             for plat in surplus_cars:
                 data = new_cars[plat]
-                veh = self.create_car(netiface, simuiface, data, link_veh_mapping)
+
+                # 只有部分雷达允许创建车辆
+                position_id = data['position_id']
+                if not LD_create_link_mapping[position_id]['is_create']:
+                    logger.info('continue')
+                    continue
+
+                veh = self.create_car(netiface, simuiface, data, LD_create_link_mapping[position_id]['links'])
                 if veh:
                     del new_cars[plat]
                     # 创建和移除时都会更新字典，时刻保证 radarToTess 与 路网车辆的唯一映射
@@ -306,7 +326,8 @@ class MySimulator(QObject, PyCustomerSimulator):
                 f"end_afterOneStep: {time.time()}, create_car_count: {create_car_count}, origin_cars_count: {len(group_origin_cars)},  surplus_cars: {len(surplus_cars)}, car_count: {len([veh for veh in simuiface.allVehicle() if veh.isStarted() or not veh.vehicleDriving().getVehiDrivDistance()])}")
         return
 
-    def create_car(self, netiface, simuiface, data, link_veh_mapping=None):
+    def create_car(self, netiface, simuiface, data, links):
+        logger.info('create car init')
         locations = netiface.locateOnCrid(QPointF(m2p(data['x']), m2p(data['y'])), 9)
         if not locations:
             return
@@ -329,17 +350,33 @@ class MySimulator(QObject, PyCustomerSimulator):
         dvp.dist = location.distToStart
         dvp.speed = data['origin_speed']
         dvp.name = f"{data['plat']}_{data['position_id']}_{time.time()}"
+
+        link_ids = []
         for location in locations:
             if not location.pLaneObject.isLane():
                 continue
             lane = location.pLaneObject.castToLane()
             link = lane.link()
+            link_ids.append(link.id())
+        logger.info(f'{link_ids}, {data}')
+
+        for location in locations:
+            if not location.pLaneObject.isLane():
+                continue
+            lane = location.pLaneObject.castToLane()
+            link = lane.link()
+
+            # 每个雷达只允许在部分路段创建车辆
+            if link.id() not in links:
+                continue
+
             lane_number = len(link.lanes()) - data['lane_id']
             # 找到了合适的车道，进行发车
             if lane_number >= 0:
                 dvp.roadId = link.id()
                 dvp.laneNumber = lane_number
                 veh = simuiface.createGVehicle(dvp)
+                logger.info('create ok')
                 return veh
 
     # 计算是否有权利进行左右自由变道,降低变道频率
