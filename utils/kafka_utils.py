@@ -12,7 +12,8 @@ from multiprocessing import Process
 from multiprocessing import Queue
 
 # ConsumerRecord.value
-from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name, LD_create_link_mapping
+from utils.config import max_size, WEB_PORT, p, LOG_FILE_DIR, log_name, LD_create_link_mapping, use_LD_config, \
+    use_LD_count, LD_use_ids
 from utils.log import setup_log
 from utils.scocket_model import WebSocketUtil
 
@@ -131,7 +132,10 @@ class MyProcess:
                     # value_deserializer=json.loads,
                 )
 
+                count, data = 0, {}
                 for message in consumer:
+                    count += 1
+                    print(f"{message.timestamp}, {int(time.time() * 1000)}{int(time.time() * 1000) - message.timestamp}")
                     message = json.loads(message.value)
                     position_id = message.get('positionId')
 
@@ -139,10 +143,10 @@ class MyProcess:
                     # if position_id != 'CGCD3':
                     # if position_id not in ['CD126', "CD133"]:
                     #     continue
-                    if position_id not in LD_create_link_mapping.keys():
-                        continue
+                    if use_LD_config:
+                        if position_id not in LD_use_ids:
+                            continue
 
-                    data = {}
                     for obj in message.get('objs', []):
                         if obj.get("longitude") and obj.get("latitude") and obj.get('laneId') and (
                                 obj.get("vehPlateString") not in ['', 'unknown', None]):
@@ -169,11 +173,16 @@ class MyProcess:
                             #         obj.update(objLength=1830, objWidth=281, objHeight=419)
                             data[obj.get("vehPlateString")] = obj
 
-                    # 尽可能保证不加锁的状态下 数据不会重复取出
-                    temp_data = origin_data['data']
-                    temp_data.update(data)
-                    if len(temp_data) < max_size:  # 防止数据量过大
-                        origin_data['data'] = temp_data
+                    # 每 use_LD_count 次数据拉取 更新一次数据,否则对服务器压力很大，很可能消费不及时
+                    if count > use_LD_count:
+                        logger.info(
+                            f"消息时间戳: {message.timestamp}, 当前时间: {int(time.time() * 1000)}, 消费延迟时间: {int(time.time() * 1000) - message.timestamp}")
+                        # 尽可能保证不加锁的状态下 数据不会重复取出
+                        temp_data = origin_data['data']
+                        temp_data.update(data)
+                        count, data = 0, {}
+                        if len(temp_data) < max_size:  # 防止数据量过大
+                            origin_data['data'] = temp_data
             except:
                 error = str(traceback.format_exc())
                 logger.error(f"kafka take error: {json.dumps(error)}")

@@ -108,13 +108,25 @@ def find_close_object(filter_cars, filter_vehs, threshold):
                                                  diff_attributes=diff_attributes)
 
     similar_combination_list, surplus_cars = [], list(filter_cars.keys())
+    # TODO 暂时取消匹配, 如果没有匹配，会产生大量的冗余车辆，kafka 会承受不住
+    # return similar_combination_list, surplus_cars
     for plat, veh_infos in neighbor_relationship.items():
-        for veh_info in veh_infos:
-            # 车型和车牌匹配成功，返回
-            if is_same2(plat, veh_info['plat']):
-                similar_combination_list.append([plat, veh_info])
-                surplus_cars.remove(plat)
-                break
+        veh_plats = [veh_info['plat'] for veh_info in veh_infos]
+        similar_plats = difflib.get_close_matches(plat, veh_plats, 1, cutoff=0.8)
+
+        # 只寻找最相似的一个字符
+        if similar_plats:
+            similar_plat = similar_plats[0]
+            index = veh_plats.index(similar_plat)
+            similar_combination_list.append([plat, veh_infos[index]])
+            surplus_cars.remove(plat)
+
+        # for veh_info in veh_infos:
+        #     # 车型和车牌匹配成功，返回
+        #     if is_same2(plat, veh_info['plat']):
+        #         similar_combination_list.append([plat, veh_info])
+        #         surplus_cars.remove(plat)
+        #         break
     return similar_combination_list, surplus_cars
 
 
@@ -226,13 +238,14 @@ def get_vehi_info(simuiface):
     ]
     link_veh_mapping = collections.defaultdict(list)
 
-    lAllVehi = simuiface.allVehicle()
-    VehisStatus = simuiface.getVehisStatus()
+    # 只取 正在运行的车辆
+    lAllVehi = simuiface.allVehiStarted()
 
-    VehisStatus_mapping = {
-        i.vehiId: i
-        for i in VehisStatus
-    }
+    # VehisStatus = simuiface.getVehisStatus()
+    # VehisStatus_mapping = {
+    #     i.vehiId: i
+    #     for i in VehisStatus
+    # }
 
     def get_attr(obj, attr):
         try:
@@ -247,26 +260,27 @@ def get_vehi_info(simuiface):
         return None
 
     for vehi in lAllVehi:
-        vehiStatus = VehisStatus_mapping.get(vehi.id())
+        # vehiStatus = VehisStatus_mapping.get(vehi.id())
         lane = vehi.lane()
-        if vehiStatus and lane:  # 确保车辆在路网上
-            origin_data = vehi.jsonInfo()
-            mPoint = get_attr(vehiStatus, 'mPoint')
-            origin_data.update(
-                {
-                    'x': p2m(mPoint.x()),
-                    'y': p2m(mPoint.y()),
-                    'height': veh_fun_z(lane.id())(p2m(mPoint.x())).tolist(),
-                    "angleGps": int(get_attr(vehi, 'angle') * 10),
-                    "sim_speed": p2m(get_attr(vehi, 'currSpeed')),
-                    'lane_number': lane.number(),
-                    'lane_id': vehi.roadId(),
-                    'is_link': vehi.roadIsLink(),
-                    'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
-                    'plats': vehi.jsonInfo()['plats'],
-                }
-            )
-            data[0]['objs'].append(origin_data)
+        # if vehiStatus and lane:  # 确保车辆在路网上
+        origin_data = vehi.jsonInfo()
+        # mPoint = get_attr(vehiStatus, 'mPoint')
+        x, y = p2m(vehi.pos().x()), p2m(vehi.pos().y())
+        origin_data.update(
+            {
+                'x': p2m(vehi.pos().x()),
+                'y': p2m(vehi.pos().y()),
+                'height': veh_fun_z(lane.id())(x).tolist(),
+                "angleGps": int(get_attr(vehi, 'angle') * 10),
+                "sim_speed": p2m(get_attr(vehi, 'currSpeed')),
+                'lane_number': lane.number(),
+                'lane_id': vehi.roadId(),
+                'is_link': vehi.roadIsLink(),
+                'speed': int(p2m(get_attr(vehi, 'currSpeed')) * 100),
+                'plats': vehi.jsonInfo()['plats'],
+            }
+        )
+        data[0]['objs'].append(origin_data)
 
         # 允许车辆不在路网上
         if vehi.roadIsLink():  # 只记录路段上的车辆，laneId 是唯一的
